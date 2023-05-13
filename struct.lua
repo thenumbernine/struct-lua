@@ -72,6 +72,7 @@ end
 		local metatable = {
 			name = name,
 			fields = fields,
+			code = code,
 			toLua = function(self)
 				local result = {}
 				for _,field in ipairs(fields) do
@@ -129,7 +130,6 @@ end
 				end
 				return true
 			end,
-			code = code,
 		}
 		metatable.__index = metatable
 		if args.metatable then
