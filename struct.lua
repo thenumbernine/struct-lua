@@ -25,14 +25,20 @@ args:
 	fields
 	metatype
 	cdef = set to 'false' to avoid calling ffi.cdef on the generated code
+	unionType = optional, if you want access to the struct as a byte array (which I'm using it for most often)
+		this defaults to 'uint8_t', but you can override to another type
+	unionField = optional, name of the underlying byte array access field,
+		default 'ptr'
 --]]
 local function newStruct(args)
 	local name = assert(args.name)
 	local fields = assert(args.fields)
+	local unionType = args.unionType or 'uint8_t'
+	local unionField = args.unionField or 'ptr'
 	local code = template([[
 typedef union <?=name?> {
 	struct {
-<? 
+<?
 local ffi = require 'ffi'
 local size = 0
 for _,kv in ipairs(fields) do
@@ -41,7 +47,7 @@ for _,kv in ipairs(fields) do
 	if bits then
 		ctype = rest
 	end
-	local base, array = ctype:match'^(.*)%[(%d+)%]$' 
+	local base, array = ctype:match'^(.*)%[(%d+)%]$'
 	if array then
 		ctype = base
 		name = name .. '[' .. array .. ']'
@@ -53,23 +59,26 @@ for _,kv in ipairs(fields) do
 		size = size + ffi.sizeof(ctype) * (array or 1)
 	end
 ?>		<?=ctype?> __attribute__((packed)) <?=name?><?=bits and (' : '..bits) or ''?>;
-<? 
+<?
 end
 ?>	};
-	uint8_t ptr[<?=size?>];
+	<?=unionType?> <?=unionField?>[<?=math.ceil(size / ffi.sizeof(unionType))?>];
 } <?=name?>;
 ]], 	{
+			ffi = ffi,
 			name = name,
 			fields = fields,
+			unionType = unionType,
+			unionField = unionField,
 		}
 	)
-	
-	local metatype 
+
+	local metatype
 	xpcall(function()
 		if args.cdef ~= false then
 			ffi.cdef(code)
 		end
-	
+
 		-- also in common with my hydro-cl project
 		-- consider merging
 		local metatable = {
@@ -93,9 +102,9 @@ end
 				for _,field in ipairs(fields) do
 					local name, ctype = next(field)
 					local s = self:fieldToString(name, ctype)
-					if s 
+					if s
 					-- hmm... bad hack
-					and s ~= '{}' 
+					and s ~= '{}'
 					then
 						t:insert(name..'='..s)
 					end
@@ -114,8 +123,8 @@ end
 
 				return (struct.typeToString[ctype] or tostring)(self[name])
 			end,
-			__concat = function(a,b) 
-				return tostring(a) .. tostring(b) 
+			__concat = function(a,b)
+				return tostring(a) .. tostring(b)
 			end,
 			__eq = function(a,b)
 				local function isprim(x)
@@ -143,7 +152,7 @@ end
 		local sizeOfFields = table.mapi(fields, function(kv)
 			local fieldName, fieldType = next(kv)
 			local rest, bits = fieldType:match'^(.*):(%d+)$'
-			local base, array = fieldType:match'^(.*)%[(%d+)%]$' 
+			local base, array = fieldType:match'^(.*)%[(%d+)%]$'
 			if bits then
 				assert(not array)
 				return bits / 8
@@ -172,7 +181,7 @@ end
 				io.stderr:write('field '..fieldName..' size '..ffi.sizeof(null[fieldName]),'\n')
 			end
 		end
---]]	
+--]]
 	end, function(err)
 		io.stderr:write(require 'template.showcode'(code),'\n')
 		io.stderr:write(err,'\n',debug.traceback(),'\n')
@@ -183,7 +192,7 @@ end
 
 local structmt = {}
 structmt.__index = struct
-structmt.__call = function(self, ...) return newStruct(...) end 
+structmt.__call = function(self, ...) return newStruct(...) end
 setmetatable(struct, structmt)
 
 return struct
