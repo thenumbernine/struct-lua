@@ -1,8 +1,9 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
+local class = require 'ext.class'
 local template = require 'template'
 
-local struct = {}
+local struct = class()
 
 function struct.dectostr(value)
 	return ('%d'):format(value)
@@ -84,7 +85,27 @@ end
 		local metatable = {
 			name = name,
 			fields = fields,
+
+			-- TODO vec-ffi's typeCode
+			-- ... also check what hydro-cl's struct uses, probably typeCode also
 			code = code,
+
+			-- TODO similar to ext.class and vec-ffi/create_vec.lua
+			isa = function(cl, obj)
+				if type(obj) == 'string'
+				or type(obj) == 'cdata'
+				then
+					-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
+					local res
+					res, obj = pcall(ffi.typeof, obj)
+					if not res then return false end
+				elseif type(obj) ~= 'table' then
+					return false
+				end
+				if not obj.isaSet then return false end
+				return obj.isaSet[cl] or false
+			end,
+
 			toLua = function(self)
 				local result = {}
 				for _,field in ipairs(fields) do
@@ -144,6 +165,15 @@ end
 			end,
 		}
 		metatable.__index = metatable
+
+		-- to match ext.class
+		metatable.class = metatable
+		metatable.super = struct
+		metatable.isaSet = {}
+		metatable.isaSet[metatable] = true
+		-- TODO merge struct.isaSet here (or is struct a class() ?)
+		metatable.isaSet[struct] = true
+
 		if args.metatable then
 			args.metatable(metatable)
 		end
@@ -190,9 +220,9 @@ end
 	return metatype, code
 end
 
-local structmt = {}
-structmt.__index = struct
-structmt.__call = function(self, ...) return newStruct(...) end
-setmetatable(struct, structmt)
+-- instead of creating a struct instance, create a metatype subclass
+function struct:new(...)
+	return newStruct(...)
+end
 
 return struct
