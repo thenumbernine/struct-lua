@@ -24,6 +24,7 @@ args:
 	name
 	fields
 	metatype
+	cdef = set to 'false' to avoid calling ffi.cdef on the generated code
 --]]
 local function newStruct(args)
 	local name = assert(args.name)
@@ -65,7 +66,9 @@ end
 	
 	local metatype 
 	xpcall(function()
-		ffi.cdef(code)
+		if args.cdef ~= false then
+			ffi.cdef(code)
+		end
 	
 		-- also in common with my hydro-cl project
 		-- consider merging
