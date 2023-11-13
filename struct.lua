@@ -4,7 +4,30 @@ local table = require 'ext.table'
 local class = require 'ext.class'
 local template = require 'template'
 
+
+-- 'isa' for LUa classes and ffi metatypes
+local function isa(cl, obj)
+	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
+	local luatype = type(obj)
+--print('got lua type', luatype)
+	if luatype == 'string'
+	or luatype == 'cdata'
+	then
+		-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
+		local res
+--print('converting to cdata: '..tostring(obj))
+		res, obj = pcall(ffi.typeof, obj)
+		if not res then return false end
+	elseif luatype ~= 'table' then
+		return false
+	end
+	if not obj.isaSet then return false end
+	return obj.isaSet[cl] or false
+end
+
 local struct = class()
+
+struct.isa = isa
 
 function struct.dectostr(value)
 	return ('%d'):format(value)
@@ -92,21 +115,7 @@ end
 			code = code,
 
 			-- TODO similar to ext.class and vec-ffi/create_vec.lua
-			isa = function(cl, obj)
-				-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
-				if type(obj) == 'string'
-				or type(obj) == 'cdata'
-				then
-					-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
-					local res
-					res, obj = pcall(ffi.typeof, obj)
-					if not res then return false end
-				elseif type(obj) ~= 'table' then
-					return false
-				end
-				if not obj.isaSet then return false end
-				return obj.isaSet[cl] or false
-			end,
+			isa = isa,
 
 			toLua = function(self)
 				local result = {}
