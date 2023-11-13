@@ -1,3 +1,4 @@
+-- TODO merge with vec-ffi and hydro-cl's struct
 local ffi = require 'ffi'
 local table = require 'ext.table'
 local class = require 'ext.class'
@@ -92,6 +93,7 @@ end
 
 			-- TODO similar to ext.class and vec-ffi/create_vec.lua
 			isa = function(cl, obj)
+				-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 				if type(obj) == 'string'
 				or type(obj) == 'cdata'
 				then
