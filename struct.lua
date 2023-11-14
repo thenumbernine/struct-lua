@@ -1,9 +1,9 @@
 -- TODO merge with vec-ffi and hydro-cl's struct
 local ffi = require 'ffi'
 local table = require 'ext.table'
+local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
-
 
 -- 'isa' for LUa classes and ffi metatypes
 local function isa(cl, obj)
@@ -21,7 +21,7 @@ local function isa(cl, obj)
 	elseif luatype ~= 'table' then
 		return false
 	end
-	if not obj.isaSet then return false end
+	if not op.safeindex(obj, 'isaSet') then return false end
 	return obj.isaSet[cl] or false
 end
 
