@@ -48,8 +48,13 @@ struct.typeToString = {
 args:
 	name
 	fields
-	metatype
+	metatable
 	cdef = set to 'false' to avoid calling ffi.cdef on the generated code
+	union = set true for unions, default false for structs
+
+
+	-- THESE ARE BEING PHASED OUT:
+	dontMakeExtraUnion = 'true' if you want to disable the unionType/unionField
 	unionType = optional, if you want access to the struct as a byte array (which I'm using it for most often)
 		this defaults to 'uint8_t', but you can override to another type
 	unionField = optional, name of the underlying byte array access field,
@@ -58,11 +63,19 @@ args:
 local function newStruct(args)
 	local name = assert(args.name)
 	local fields = assert(args.fields)
+	local union = args.union
+	local dontMakeExtraUnion = args.dontMakeExtraUnion
 	local unionType = args.unionType or 'uint8_t'
 	local unionField = args.unionField or 'ptr'
 	local code = template([[
+
+<? if dontMakeExtraUnion then ?>
+typedef <?=union and "union" or "struct"?> <?=name?> {
+<? else ?>
 typedef union <?=name?> {
 	struct {
+<? end ?>
+
 <?
 local ffi = require 'ffi'
 local size = 0
@@ -86,13 +99,19 @@ for _,kv in ipairs(fields) do
 ?>		<?=ctype?> __attribute__((packed)) <?=name?><?=bits and (' : '..bits) or ''?>;
 <?
 end
+	if dontMakeExtraUnion then ?>
+} <?=name?>;
+<?	else
 ?>	};
 	<?=unionType?> <?=unionField?>[<?=math.ceil(size / ffi.sizeof(unionType))?>];
 } <?=name?>;
+<? end ?>
 ]], 	{
 			ffi = ffi,
 			name = name,
 			fields = fields,
+			union = union,
+			dontMakeExtraUnion = dontMakeExtraUnion,
 			unionType = unionType,
 			unionField = unionField,
 		}
