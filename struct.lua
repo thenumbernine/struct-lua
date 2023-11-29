@@ -1,4 +1,11 @@
--- TODO merge with vec-ffi and hydro-cl's struct
+--[[
+TODO merge with vec-ffi and hydro-cl's struct
+
+also TODO more flexible.
+- no default union
+- support for anonymous structs
+- support for packed
+--]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
 local op = require 'ext.op'
@@ -59,12 +66,14 @@ args:
 		this defaults to 'uint8_t', but you can override to another type
 	unionField = optional, name of the underlying byte array access field,
 		default 'ptr'
+	dontPack = 'true' to omit __attribute__((packed)) ... why it was default ...
 --]]
 local function newStruct(args)
 	local name = assert(args.name)
 	local fields = assert(args.fields)
 	local union = args.union
 	local dontMakeExtraUnion = args.dontMakeExtraUnion
+	local dontPack = args.dontPack
 	local unionType = args.unionType or 'uint8_t'
 	local unionField = args.unionField or 'ptr'
 	local code = template([[
@@ -96,7 +105,7 @@ for _,kv in ipairs(fields) do
 	else
 		size = size + ffi.sizeof(ctype) * (array or 1)
 	end
-?>		<?=ctype?> __attribute__((packed)) <?=name?><?=bits and (' : '..bits) or ''?>;
+?>		<?=ctype?> <? if not dontPack then ?>__attribute__((packed))<? end ?> <?=name?><?=bits and (' : '..bits) or ''?>;
 <?
 end
 	if dontMakeExtraUnion then ?>
@@ -112,6 +121,7 @@ end
 			fields = fields,
 			union = union,
 			dontMakeExtraUnion = dontMakeExtraUnion,
+			dontPack = dontPack,
 			unionType = unionType,
 			unionField = unionField,
 		}
@@ -209,24 +219,26 @@ end
 		end
 		metatype = ffi.metatype(name, metatable)
 
-		local sizeOfFields = table.mapi(fields, function(kv)
-			local fieldName, fieldType = next(kv)
-			local rest, bits = fieldType:match'^(.*):(%d+)$'
-			local base, array = fieldType:match'^(.*)%[(%d+)%]$'
-			if bits then
-				assert(not array)
-				return bits / 8
-			else
-				return ffi.sizeof(fieldType)
+		if not dontPack then
+			local sizeOfFields = table.mapi(fields, function(kv)
+				local fieldName, fieldType = next(kv)
+				local rest, bits = fieldType:match'^(.*):(%d+)$'
+				local base, array = fieldType:match'^(.*)%[(%d+)%]$'
+				if bits then
+					assert(not array)
+					return bits / 8
+				else
+					return ffi.sizeof(fieldType)
+				end
+			end):sum()
+			local sizeof = ffi.sizeof(name)
+			if sizeof ~= sizeOfFields then
+				error(
+					"sizeof("..name..") = "..sizeof.."\n"
+					.."sizeof fields = "..sizeOfFields.."\n"
+					.."struct "..name.." isn't packed!"
+				)
 			end
-		end):sum()
-		local sizeof = ffi.sizeof(name)
-		if sizeof ~= sizeOfFields then
-			error(
-				"sizeof("..name..") = "..sizeof.."\n"
-				.."sizeof fields = "..sizeOfFields.."\n"
-				.."struct "..name.." isn't packed!"
-			)
 		end
 --[[
 		local null = ffi.cast(name..'*', nil)
