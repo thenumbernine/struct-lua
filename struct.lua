@@ -9,15 +9,16 @@ also TODO more flexible.
 where is this used? since I'm about to overhaul it ...
 cl/obj/env.lua		... just uses struct:isa
 efesoln-cl/efe.lua
-
-↑↑↑ fixed ↑↑↑
-
 super_metroid_randomizer/
 ff6-hacking/editor-lua
 ff6-hacking/zst-hacking/decode/zst-patch.lua
 ff6-randomizer/
 ljvm/
 mesh/readfbx.lua
+
+↑↑↑ fixed ↑↑↑
+
+TODO
 hydro-cl ... has its own version
 vec-ffi/create_vec.lua ... is its own version of a sort
 --]]
