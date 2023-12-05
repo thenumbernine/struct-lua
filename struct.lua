@@ -8,10 +8,10 @@ also TODO more flexible.
 
 where is this used? since I'm about to overhaul it ...
 cl/obj/env.lua		... just uses struct:isa
+efesoln-cl/efe.lua
 
 ↑↑↑ fixed ↑↑↑
 
-efesoln-cl/efe.lua
 super_metroid_randomizer/
 ff6-hacking/editor-lua
 ff6-hacking/zst-hacking/decode/zst-patch.lua
@@ -90,9 +90,6 @@ local function newStruct(args)
 	local fields = assert(args.fields)
 	local union = args.union
 	local packed = args.packed
-	if packed == nil then
-		packed = struct.packed
-	end
 	local code = template([[
 <?
 if name then
@@ -103,15 +100,16 @@ else
 <?
 end
 local ffi = require 'ffi'
-local size = 0
 for _,field in ipairs(fields) do
 	local name = field.name
 	local ctype = field.type
 	if not name then
 ?>	<?=ctype.code:gsub('\n', '\n\t')?>
 <?	else
+		local bits
 		if type(ctype) == 'string' then
-			local rest, bits = ctype:match'^(.*):(%d+)$'
+			local rest
+			rest, bits = ctype:match'^(.*):(%d+)$'
 			if bits then
 				ctype = rest
 			end
@@ -119,12 +117,6 @@ for _,field in ipairs(fields) do
 			if array then
 				ctype = base
 				name = name .. '[' .. array .. ']'
-			end
-			if bits then
-				assert(not array)
-				size = size + bits / 8
-			else
-				size = size + ffi.sizeof(ctype) * (array or 1)
 			end
 		elseif struct:isa(ctype) then
 			if ctype.name then
