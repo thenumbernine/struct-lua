@@ -5,9 +5,25 @@ also TODO more flexible.
 - no default union
 - support for anonymous structs
 - support for packed
+
+where is this used? since I'm about to overhaul it ...
+cl/obj/env.lua		... just uses struct:isa
+
+↑↑↑ fixed ↑↑↑
+
+efesoln-cl/efe.lua
+super_metroid_randomizer/
+ff6-hacking/editor-lua
+ff6-hacking/zst-hacking/decode/zst-patch.lua
+ff6-randomizer/
+ljvm/
+mesh/readfbx.lua
+hydro-cl ... has its own version
+vec-ffi/create_vec.lua ... is its own version of a sort
 --]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
+local string = require 'ext.string'
 local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
@@ -26,7 +42,7 @@ local function isa(cl, obj)
 		res, obj = pcall(ffi.typeof, obj)
 		if not res then return false end
 	elseif luatype ~= 'table' then
-		return false
+	--	return false
 	end
 	if not op.safeindex(obj, 'isaSet') then return false end
 	return obj.isaSet[cl] or false
@@ -53,77 +69,84 @@ struct.typeToString = {
 
 --[[
 args:
-	name
-	fields
-	metatable
+	name = (optional) struct name
+	anonymous = (optional) true , for inner-anonymous structs
+		either name or anonymous must be set
+	fields = table of ...
+		name = string
+		type = struct-type, cdata, or string of ffi c type
+		no_iter = (optional) omit all iteration, including the following:
+		no_tostring = (optional) omit this from tostring
+		no_tolua = (optional) omit from toLua()
+	metatable = function(metatable) for transforming the metatable
 	cdef = set to 'false' to avoid calling ffi.cdef on the generated code
 	union = set true for unions, default false for structs
-
-
-	-- THESE ARE BEING PHASED OUT:
-	dontMakeExtraUnion = 'true' if you want to disable the unionType/unionField
-	unionType = optional, if you want access to the struct as a byte array (which I'm using it for most often)
-		this defaults to 'uint8_t', but you can override to another type
-	unionField = optional, name of the underlying byte array access field,
-		default 'ptr'
-	dontPack = 'true' to omit __attribute__((packed)) ... why it was default ...
+	packed = 'true' to omit __attribute__((packed)) ... why it was default ...
 --]]
 local function newStruct(args)
-	local name = assert(args.name)
+	local name = args.name
+	local anonymous = args.anonymous
+	assert(args.name or args.anonymous)
 	local fields = assert(args.fields)
 	local union = args.union
-	local dontMakeExtraUnion = args.dontMakeExtraUnion
-	local dontPack = args.dontPack
-	local unionType = args.unionType or 'uint8_t'
-	local unionField = args.unionField or 'ptr'
+	local packed = args.packed
+	if packed == nil then
+		packed = struct.packed
+	end
 	local code = template([[
-
-<? if dontMakeExtraUnion then ?>
-typedef <?=union and "union" or "struct"?> <?=name?> {
-<? else ?>
-typedef union <?=name?> {
-	struct {
-<? end ?>
-
 <?
-local ffi = require 'ffi'
-local size = 0
-for _,kv in ipairs(fields) do
-	local name, ctype = next(kv)
-	local rest, bits = ctype:match'^(.*):(%d+)$'
-	if bits then
-		ctype = rest
-	end
-	local base, array = ctype:match'^(.*)%[(%d+)%]$'
-	if array then
-		ctype = base
-		name = name .. '[' .. array .. ']'
-	end
-	if bits then
-		assert(not array)
-		size = size + bits / 8
-	else
-		size = size + ffi.sizeof(ctype) * (array or 1)
-	end
-?>		<?=ctype?> <? if not dontPack then ?>__attribute__((packed))<? end ?> <?=name?><?=bits and (' : '..bits) or ''?>;
+if name then
+?>typedef <?=union and "union" or "struct"?> <?=name?> {
+<?
+else
+?><?=union and "union" or "struct"?> {
 <?
 end
-	if dontMakeExtraUnion then ?>
-} <?=name?>;
+local ffi = require 'ffi'
+local size = 0
+for _,field in ipairs(fields) do
+	local name = field.name
+	local ctype = field.type
+	if not name then
+?>	<?=ctype.code:gsub('\n', '\n\t')?>
 <?	else
-?>	};
-	<?=unionType?> <?=unionField?>[<?=math.ceil(size / ffi.sizeof(unionType))?>];
-} <?=name?>;
-<? end ?>
-]], 	{
+		if type(ctype) == 'string' then
+			local rest, bits = ctype:match'^(.*):(%d+)$'
+			if bits then
+				ctype = rest
+			end
+			local base, array = ctype:match'^(.*)%[(%d+)%]$'
+			if array then
+				ctype = base
+				name = name .. '[' .. array .. ']'
+			end
+			if bits then
+				assert(not array)
+				size = size + bits / 8
+			else
+				size = size + ffi.sizeof(ctype) * (array or 1)
+			end
+		elseif struct:isa(ctype) then
+			if ctype.name then
+				ctype = ctype.name
+			else	-- anonymous struct <-> insert the code here
+				ctype = ctype.code
+			end
+		else
+			error("you are here")
+		end
+?>	<?=ctype?> <? if packed then ?>__attribute__((packed))<? end ?> <?=name or ''?><?=bits and (' : '..bits) or ''?>;
+<?	end
+end
+?>}<?=name and (' '..name) or ''?>;]], 
+		{
 			ffi = ffi,
+			anonymous = anonymous,
 			name = name,
 			fields = fields,
+			struct = struct,
 			union = union,
-			dontMakeExtraUnion = dontMakeExtraUnion,
-			dontPack = dontPack,
-			unionType = unionType,
-			unionField = unionField,
+			packed = packed,
 		}
 	)
 
@@ -133,10 +156,13 @@ end
 			ffi.cdef(code)
 		end
 
+		assert(not struct:isa(fields))
+
 		-- also in common with my hydro-cl project
 		-- consider merging
 		local metatable = {
 			name = name,
+			anonymous = anonymous,
 			fields = fields,
 
 			-- TODO vec-ffi's typeCode
@@ -146,35 +172,78 @@ end
 			-- TODO similar to ext.class and vec-ffi/create_vec.lua
 			isa = isa,
 
+			-- iterate across all named fields of the struct
+			-- including anonymous-inner structs
+			-- TODO just use __pairs ?
+			fielditer = function(self)
+				assert(fields)
+				assert(self.fields == fields)
+				if self.fielditerinner then
+					return coroutine.wrap(function()
+						self:fielditerinner(self.fields)
+					end)
+				else
+					-- anonymous?
+				end
+			end,
+			fielditerinner = function(self, fields)
+				assert(self.fielditerinner)
+				assert(fields)
+				assert(type(fields) == 'table')
+				for _,field in ipairs(fields) do
+					if not field.no_iter then
+						local ctype = field.type
+						if field.name then
+							assert(not field.anonymous)
+							coroutine.yield(field.name, ctype, field)
+						else
+							assert(ctype.anonymous)
+							if struct:isa(ctype) then
+								assert(ctype.fields)
+								self:fielditerinner(ctype.fields)
+							end
+						end
+					end
+				end
+			end,
+
 			toLua = function(self)
 				local result = {}
-				for _,field in ipairs(fields) do
-					local name, ctype = next(field)
-					local value = self[name]
-					if ctype.toLua then
-						value = value:toLua()
+				for name, ctype, field in self:fielditer() do
+					if not field.no_tolua then
+						local value = self[name]
+						if struct:isa(ctype) then
+							value = value:toLua()
+						end
+						result[name] = value
 					end
-					result[name] = value
 				end
 				return result
 			end,
 			__tostring = function(self)
 				local t = table()
-				for _,field in ipairs(fields) do
-					local name, ctype = next(field)
-					local s = self:fieldToString(name, ctype)
-					if s
-					-- hmm... bad hack
-					and s ~= '{}'
-					then
-						t:insert(name..'='..s)
+				for name, ctype, field in self:fielditer() do
+					if not field.no_tostring then
+						assert(name)
+						local s = self:fieldToString(name, ctype)
+						if s
+						-- hmm... bad hack
+						and s ~= '{}'
+						then
+							t:insert((name or '?')..'='..s)
+						end
 					end
 				end
 				return '{'..t:concat', '..'}'
 			end,
 			fieldToString = function(self, name, ctype)
+				if struct:isa(ctype) then
+					ctype = ctype.name
+				end
 				-- special for bitflags ...
-				if ctype:sub(-2) == ':1' then
+				if type(ctype) == 'string'
+				and ctype:sub(-2) == ':1'
+				then
 					if self[name] ~= 0 then
 						return 'true'
 					else
@@ -184,9 +253,7 @@ end
 
 				return (struct.typeToString[ctype] or tostring)(self[name])
 			end,
-			__concat = function(a,b)
-				return tostring(a) .. tostring(b)
-			end,
+			__concat = string.concat,
 			__eq = function(a,b)
 				local function isprim(x)
 					return ({
@@ -198,7 +265,8 @@ end
 				end
 				if isprim(a) or isprim(b) then return rawequal(a,b) end
 				for _,field in ipairs(fields) do
-					local name, ctype = next(field)
+					local name = field.name
+					local ctype = field.type
 					if a[name] ~= b[name] then return false end
 				end
 				return true
@@ -217,11 +285,22 @@ end
 		if args.metatable then
 			args.metatable(metatable)
 		end
-		metatype = ffi.metatype(name, metatable)
+		-- if we don't have a name then can we set a metatype?
+		-- in fact, even if we have a name as a typedef to an anonymous struct, 
+		--  ffi still gives the cdata type a number instead of a name
+		if name then
+			metatype = ffi.metatype(name, metatable)
+		else
+			-- notice now 'metatype' i.e. what is returned is not a ffi.cdata ...
+			metatype = metatable
+		end
 
-		if not dontPack then
-			local sizeOfFields = table.mapi(fields, function(kv)
-				local fieldName, fieldType = next(kv)
+--[[
+		if packed then
+			local sizeOfFields = table.mapi(fields, function(field)
+				local fieldName = field.name
+				local fieldType = field.type
+-- TODO what if it's a ctype ...				
 				local rest, bits = fieldType:match'^(.*):(%d+)$'
 				local base, array = fieldType:match'^(.*)%[(%d+)%]$'
 				if bits then
@@ -240,16 +319,19 @@ end
 				)
 			end
 		end
+--]]
 --[[
 		local null = ffi.cast(name..'*', nil)
-		local sizeOfFields = table.map(fields, function(kv)
-			local fieldName,fieldType = next(kv)
+		local sizeOfFields = table.mapi(fields, function(field)
+			local fieldName = field.name
+			local fieldType = field.type
 			return ffi.sizeof(null[fieldName])
 		end):sum()
 		if ffi.sizeof(name) ~= sizeOfFields then
 			io.stderr:write("struct "..name.." isn't packed!\n")
 			for _,field in ipairs(fields) do
-				local fieldName,fieldType = next(kv)
+				local fieldName = field.name
+				local fieldType = field.type
 				io.stderr:write('field '..fieldName..' size '..ffi.sizeof(null[fieldName]),'\n')
 			end
 		end
@@ -259,12 +341,20 @@ end
 		io.stderr:write(err,'\n',debug.traceback(),'\n')
 		os.exit(1)
 	end)
+assert(struct:isa(metatype))	
+	-- NOTICE ffi.metatype returns the same as ffi.typeof
 	return metatype, code
 end
 
 -- instead of creating a struct instance, create a metatype subclass
 function struct:new(...)
 	return newStruct(...)
+end
+
+-- helper function
+struct.union = function(args)
+	args.union = true
+	return struct(args)
 end
 
 return struct
