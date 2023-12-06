@@ -71,18 +71,23 @@ struct.typeToString = {
 --[[
 args:
 	name = (optional) struct name
-	anonymous = (optional) true , for inner-anonymous structs
+	anonymous = (optional) set to 'true' for inner-anonymous structs
 		either name or anonymous must be set
 	fields = table of ...
-		name = string
+		name = string.  required unless the type is an anonymous struct.
 		type = struct-type, cdata, or string of ffi c type
-		no_iter = (optional) omit all iteration, including the following:
-		no_tostring = (optional) omit this from tostring
-		no_tolua = (optional) omit from toLua()
-	metatable = function(metatable) for transforming the metatable
-	cdef = set to 'false' to avoid calling ffi.cdef on the generated code
-	union = set true for unions, default false for structs
-	packed = 'true' to omit __attribute__((packed)) ... why it was default ...
+		no_iter = (optional) set to 'true' to omit all iteration, including the following:
+		no_tostring = (optional) set to 'true' to omit this from tostring
+		no_tolua = (optional) set to 'true' to omit from toLua()
+		... tempting to make fields just an enumeration of the integer children ...
+	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
+	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
+	union = (optional) set to 'true' for unions, default false for structs
+	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields ... TODO specify this per-field? or allow both?
+
+	TODO
+	- C++ vs C / typedef vs 'struct <name>'
+	- option to insert code into the struct body (esp for C++)
 --]]
 local function newStruct(args)
 	local name = args.name
@@ -131,7 +136,7 @@ for _,field in ipairs(fields) do
 ?>	<?=ctype?> <? if packed then ?>__attribute__((packed))<? end ?> <?=name or ''?><?=bits and (' : '..bits) or ''?>;
 <?	end
 end
-?>}<?=name and (' '..name) or ''?>;]], 
+?>}<?=name and (' '..name) or ''?>;]],
 		{
 			ffi = ffi,
 			anonymous = anonymous,
@@ -265,7 +270,14 @@ end
 				return true
 			end,
 		}
+		-- [[ throws errors if the C field isn't present
 		metatable.__index = metatable
+		--]]
+		--[[ doesn't throw errors if the C field isn't present.  probably runs slower.
+		-- but this doesn't help by field detect in the case of cdata unless every single cdef metamethod __index is set to a function instead of a table...
+		metatable.__index = function(t,k) return metatable[k] end
+		--]]
+
 
 		-- to match ext.class
 		metatable.class = metatable
@@ -279,7 +291,7 @@ end
 			args.metatable(metatable)
 		end
 		-- if we don't have a name then can we set a metatype?
-		-- in fact, even if we have a name as a typedef to an anonymous struct, 
+		-- in fact, even if we have a name as a typedef to an anonymous struct,
 		--  ffi still gives the cdata type a number instead of a name
 		if name then
 			metatype = ffi.metatype(name, metatable)
@@ -293,7 +305,7 @@ end
 			local sizeOfFields = table.mapi(fields, function(field)
 				local fieldName = field.name
 				local fieldType = field.type
--- TODO what if it's a ctype ...				
+-- TODO what if it's a ctype ...
 				local rest, bits = fieldType:match'^(.*):(%d+)$'
 				local base, array = fieldType:match'^(.*)%[(%d+)%]$'
 				if bits then
@@ -334,7 +346,7 @@ end
 		io.stderr:write(err,'\n',debug.traceback(),'\n')
 		os.exit(1)
 	end)
-assert(struct:isa(metatype))	
+assert(struct:isa(metatype))
 	-- NOTICE ffi.metatype returns the same as ffi.typeof
 	return metatype, code
 end
