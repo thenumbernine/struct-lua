@@ -24,6 +24,8 @@ local template = require 'template'
 
 local struct = class()
 
+-- [=[ begin functions for child metatable classes
+
 -- 'isa' for Lua classes and ffi metatypes
 -- TODO similar to ext.class ...
 function struct.isa(cl, obj)
@@ -112,6 +114,21 @@ function struct:__tostring()
 	return '{'..t:concat', '..'}'
 end
 
+function struct.dectostr(value)
+	return ('%d'):format(value)
+end
+
+function struct.hextostr(digits)
+	return function(value)
+		return ('%0'..digits..'x'):format(value)
+	end
+end
+
+struct.typeToString = {
+	uint8_t = struct.dectostr,
+	uint16_t = struct.dectostr,
+}
+
 function struct:fieldToString(name, ctype)
 	if struct:isa(ctype) then
 		ctype = ctype.name
@@ -151,27 +168,13 @@ struct.__eq = function(a,b)
 	return true
 end
 
-
-function struct.dectostr(value)
-	return ('%d'):format(value)
-end
-
-function struct.hextostr(digits)
-	return function(value)
-		return ('%0'..digits..'x'):format(value)
-	end
-end
-
-struct.typeToString = {
-	uint8_t = struct.dectostr,
-	uint16_t = struct.dectostr,
-}
-
 -- assigned to metatable.new
 -- I'd put it in struct:new, but that's already being used to create new structs...
 local function newmember(mt, ...)
 	return ffi.new(mt.name, ...)
 end
+
+--]=] end functions for child metatable classes
 
 --[[
 this generate both the C and C++ code
