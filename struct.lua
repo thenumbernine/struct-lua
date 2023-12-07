@@ -337,7 +337,7 @@ end
 	assert(struct:isa(metatype))
 
 	-- NOTICE ffi.metatype returns the same as ffi.typeof
-	return metatype, code
+	return metatype
 end
 
 -- instead of creating a struct instance, create a metatype subclass
