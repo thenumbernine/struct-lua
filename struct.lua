@@ -15,12 +15,12 @@ ff6-hacking/zst-hacking/decode/zst-patch.lua
 ff6-randomizer/
 ljvm/
 mesh/readfbx.lua
+vec-ffi/create_vec.lua
 
 ↑↑↑ fixed ↑↑↑
 
 TODO
 hydro-cl ... has its own version
-vec-ffi/create_vec.lua ... is its own version of a sort
 --]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
@@ -73,6 +73,8 @@ args:
 	name = (optional) struct name
 	anonymous = (optional) set to 'true' for inner-anonymous structs
 		either name or anonymous must be set
+	union = (optional) set to 'true' for unions, default false for structs
+	cpp = (optional) set to 'true' to use `struct <name> { ... }` instead of `typedef struct { ... } <name>`
 	fields = table of ...
 		name = string.  required unless the type is an anonymous struct.
 		type = struct-type, cdata, or string of ffi c type
@@ -80,13 +82,13 @@ args:
 		no_tostring = (optional) set to 'true' to omit this from tostring
 		no_tolua = (optional) set to 'true' to omit from toLua()
 		... tempting to make fields just an enumeration of the integer children ...
+		value = (optional) string to set as the default value - but only if cpp is true.
 	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
-	union = (optional) set to 'true' for unions, default false for structs
 	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields ... TODO specify this per-field? or allow both?
 
 	TODO
-	- C++ vs C / typedef vs 'struct <name>'
+	- option to disable the 'typedef' for C structs and just use a `struct <name>` type?
 	- option to insert code into the struct body (esp for C++)
 --]]
 local function newStruct(args)
@@ -96,12 +98,16 @@ local function newStruct(args)
 	local fields = assert(args.fields)
 	local union = args.union
 	local packed = args.packed
+	local cpp = args.cpp
 	local code = template([[
 <?
 if name then
+	if cpp then
+?><?=union and "union" or "struct"?> <?=name?> {
+<?	else
 ?>typedef <?=union and "union" or "struct"?> <?=name?> {
-<?
-else
+<?	end
+else -- anonymous (inner) structs:
 ?><?=union and "union" or "struct"?> {
 <?
 end
@@ -133,17 +139,33 @@ for _,field in ipairs(fields) do
 		else
 			error("you are here")
 		end
-?>	<?=ctype?> <? if packed then ?>__attribute__((packed))<? end ?> <?=name or ''?><?=bits and (' : '..bits) or ''?>;
+?>	<?=ctype?> <?
+		if packed then
+			?>__attribute__((packed))<?
+		end
+		?><?=name and (' '..name) or ''
+		?><?=bits and (' : '..bits) or ''
+		?><?
+		if cpp and field.value then
+			?> = <?=field.value?><?
+		end
+		?>;
 <?	end
 end
-?>}<?=name and (' '..name) or ''?>;]],
+if cpp then
+?>};<?
+else
+?>}<?=name and (' '..name) or ''?>;<?
+end
+?>]],
 		{
 			ffi = ffi,
 			anonymous = anonymous,
 			name = name,
+			union = union,
+			cpp = cpp,
 			fields = fields,
 			struct = struct,
-			union = union,
 			packed = packed,
 		}
 	)
@@ -293,7 +315,10 @@ end
 		-- if we don't have a name then can we set a metatype?
 		-- in fact, even if we have a name as a typedef to an anonymous struct,
 		--  ffi still gives the cdata type a number instead of a name
-		if name then
+		if name
+		-- also if we were told not to cdef then we can't get a metatype
+		and args.cdef ~= false
+		then
 			metatype = ffi.metatype(name, metatable)
 		else
 			-- notice now 'metatype' i.e. what is returned is not a ffi.cdata ...
