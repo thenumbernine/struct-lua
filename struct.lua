@@ -186,119 +186,122 @@ end
 
 		-- also in common with my hydro-cl project
 		-- consider merging
-		metatable = {
-			name = name,
-			anonymous = anonymous,
-			fields = fields,
+		metatable = class(struct)
+		metatable.name = name
+		metatable.anonymous = anonymous
+		metatable.fields = fields
 
-			code = codes.c,
-			cppcode = codes.cpp,
+		metatable.code = codes.c
+		metatable.cppcode = codes.cpp
 
-			-- TODO similar to ext.class ...
-			isa = isa,
+		-- TODO similar to ext.class ...
+		metatable.isa = isa
 
-			-- iterate across all named fields of the struct
-			-- including anonymous-inner structs
-			-- TODO just use __pairs ?
-			fielditer = function(self)
-				assert(fields)
-				assert(self.fields == fields)
-				if self.fielditerinner then
-					return coroutine.wrap(function()
-						self:fielditerinner(self.fields)
-					end)
-				else
-					-- anonymous?
-				end
-			end,
-			fielditerinner = function(self, fields)
-				assert(self.fielditerinner)
-				assert(fields)
-				assert(type(fields) == 'table')
-				for _,field in ipairs(fields) do
-					if not field.no_iter then
-						local ctype = field.type
-						if field.name then
-							assert(not field.anonymous)
-							coroutine.yield(field.name, ctype, field)
-						else
-							assert(ctype.anonymous)
-							if struct:isa(ctype) then
-								assert(ctype.fields)
-								self:fielditerinner(ctype.fields)
-							end
-						end
-					end
-				end
-			end,
+		-- iterate across all named fields of the struct
+		-- including anonymous-inner structs
+		-- TODO just use __pairs ?
+		function metatable:fielditer()
+			assert(fields)
+			assert(self.fields == fields)
+			if self.fielditerinner then
+				return coroutine.wrap(function()
+					self:fielditerinner(self.fields)
+				end)
+			else
+				-- anonymous?
+			end
+		end
 
-			toLua = function(self)
-				local result = {}
-				for name, ctype, field in self:fielditer() do
-					if not field.no_tolua then
-						local value = self[name]
-						if struct:isa(ctype) then
-							value = value:toLua()
-						end
-						result[name] = value
-					end
-				end
-				return result
-			end,
-			__tostring = function(self)
-				local t = table()
-				for name, ctype, field in self:fielditer() do
-					if not field.no_tostring then
-						assert(name)
-						local s = self:fieldToString(name, ctype)
-						if s
-						-- hmm... bad hack
-						and s ~= '{}'
-						then
-							t:insert((name or '?')..'='..s)
-						end
-					end
-				end
-				return '{'..t:concat', '..'}'
-			end,
-			fieldToString = function(self, name, ctype)
-				if struct:isa(ctype) then
-					ctype = ctype.name
-				end
-				-- special for bitflags ...
-				if type(ctype) == 'string'
-				and ctype:sub(-2) == ':1'
-				then
-					if self[name] ~= 0 then
-						return 'true'
-					else
-						return nil -- nothing
-					end
-				end
-
-				return (struct.typeToString[ctype] or tostring)(self[name])
-			end,
-			__concat = string.concat,
-			__eq = function(a,b)
-				local function isprim(x)
-					return ({
-						['nil'] = true,
-						boolean = true,
-						number = true,
-						string = true,
-					})[type(x)]
-				end
-				if isprim(a) or isprim(b) then return rawequal(a,b) end
-				for _,field in ipairs(fields) do
-					local name = field.name
+		function metatable:fielditerinner(fields)
+			assert(self.fielditerinner)
+			assert(fields)
+			assert(type(fields) == 'table')
+			for _,field in ipairs(fields) do
+				if not field.no_iter then
 					local ctype = field.type
-					if a[name] ~= b[name] then return false end
+					if field.name then
+						assert(not field.anonymous)
+						coroutine.yield(field.name, ctype, field)
+					else
+						assert(ctype.anonymous)
+						if struct:isa(ctype) then
+							assert(ctype.fields)
+							self:fielditerinner(ctype.fields)
+						end
+					end
 				end
-				return true
-			end,
-		}
+			end
+		end
 
-		metatable = class(struct, metatable)
+		function metatable:toLua()
+			local result = {}
+			for name, ctype, field in self:fielditer() do
+				if not field.no_tolua then
+					local value = self[name]
+					if struct:isa(ctype) then
+						value = value:toLua()
+					end
+					result[name] = value
+				end
+			end
+			return result
+		end
+
+		function metatable:__tostring()
+			local t = table()
+			for name, ctype, field in self:fielditer() do
+				if not field.no_tostring then
+					assert(name)
+					local s = self:fieldToString(name, ctype)
+					if s
+					-- hmm... bad hack
+					and s ~= '{}'
+					then
+						t:insert((name or '?')..'='..s)
+					end
+				end
+			end
+			return '{'..t:concat', '..'}'
+		end
+
+		function metatable:fieldToString(name, ctype)
+			if struct:isa(ctype) then
+				ctype = ctype.name
+			end
+			-- special for bitflags ...
+			if type(ctype) == 'string'
+			and ctype:sub(-2) == ':1'
+			then
+				if self[name] ~= 0 then
+					return 'true'
+				else
+					return nil -- nothing
+				end
+			end
+
+			return (struct.typeToString[ctype] or tostring)(self[name])
+		end
+
+		metatable.__concat = string.concat
+
+		metatable.__eq = function(a,b)
+			local function isprim(x)
+				return ({
+					['nil'] = true,
+					boolean = true,
+					number = true,
+					string = true,
+				})[type(x)]
+			end
+			if isprim(a) or isprim(b) then return rawequal(a,b) end
+			for _,field in ipairs(fields) do
+				local name = field.name
+				local ctype = field.type
+				if a[name] ~= b[name] then return false end
+			end
+			return true
+		end
+
 		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
 		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
 
