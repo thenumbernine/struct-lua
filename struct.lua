@@ -22,8 +22,11 @@ local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
 
+local struct = class()
+
 -- 'isa' for Lua classes and ffi metatypes
-local function isa(cl, obj)
+-- TODO similar to ext.class ...
+function struct.isa(cl, obj)
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
 --print('got lua type', luatype)
@@ -44,9 +47,110 @@ local function isa(cl, obj)
 	return isaSet[cl] or false
 end
 
-local struct = class()
+-- iterate across all named fields of the struct
+-- including anonymous-inner structs
+-- TODO just use __pairs ?
+function struct:fielditer()
+	if self.fielditerinner then
+		return coroutine.wrap(function()
+			self:fielditerinner(self.fields)
+		end)
+	else
+		-- anonymous?
+	end
+end
 
-struct.isa = isa
+function struct:fielditerinner(fields)
+	assert(self.fielditerinner)
+	assert(fields)
+	assert(type(fields) == 'table')
+	for _,field in ipairs(fields) do
+		if not field.no_iter then
+			local ctype = field.type
+			if field.name then
+				assert(not field.anonymous)
+				coroutine.yield(field.name, ctype, field)
+			else
+				assert(ctype.anonymous)
+				if struct:isa(ctype) then
+					assert(ctype.fields)
+					self:fielditerinner(ctype.fields)
+				end
+			end
+		end
+	end
+end
+
+function struct:toLua()
+	local result = {}
+	for name, ctype, field in self:fielditer() do
+		if not field.no_tolua then
+			local value = self[name]
+			if struct:isa(ctype) then
+				value = value:toLua()
+			end
+			result[name] = value
+		end
+	end
+	return result
+end
+
+function struct:__tostring()
+	local t = table()
+	for name, ctype, field in self:fielditer() do
+		if not field.no_tostring then
+			assert(name)
+			local s = self:fieldToString(name, ctype)
+			if s
+			-- hmm... bad hack
+			and s ~= '{}'
+			then
+				t:insert((name or '?')..'='..s)
+			end
+		end
+	end
+	return '{'..t:concat', '..'}'
+end
+
+function struct:fieldToString(name, ctype)
+	if struct:isa(ctype) then
+		ctype = ctype.name
+	end
+	-- special for bitflags ...
+	if type(ctype) == 'string'
+	and ctype:sub(-2) == ':1'
+	then
+		if self[name] ~= 0 then
+			return 'true'
+		else
+			return nil -- nothing
+		end
+	end
+
+	return (struct.typeToString[ctype] or tostring)(self[name])
+end
+
+struct.__concat = string.concat
+
+local function isprim(x)
+	return ({
+		['nil'] = true,
+		boolean = true,
+		number = true,
+		string = true,
+	})[type(x)]
+end
+
+struct.__eq = function(a,b)
+	if isprim(a) or isprim(b) then return rawequal(a,b) end			-- already automatic?
+	if getmetatable(a) ~= getmetatable(b) then return false end 	-- already automatic?
+	-- by now the metatypes should match
+	for name, ctype in a:fielditer() do
+		if a[name] ~= b[name] then return false end
+	end
+	return true
+end
+
 
 function struct.dectostr(value)
 	return ('%d'):format(value)
@@ -63,6 +167,8 @@ struct.typeToString = {
 	uint16_t = struct.dectostr,
 }
 
+-- assigned to metatable.new
+-- I'd put it in struct:new, but that's already being used to create new structs...
 local function newmember(mt, ...)
 	return ffi.new(mt.name, ...)
 end
@@ -193,114 +299,6 @@ end
 
 		metatable.code = codes.c
 		metatable.cppcode = codes.cpp
-
-		-- TODO similar to ext.class ...
-		metatable.isa = isa
-
-		-- iterate across all named fields of the struct
-		-- including anonymous-inner structs
-		-- TODO just use __pairs ?
-		function metatable:fielditer()
-			assert(fields)
-			assert(self.fields == fields)
-			if self.fielditerinner then
-				return coroutine.wrap(function()
-					self:fielditerinner(self.fields)
-				end)
-			else
-				-- anonymous?
-			end
-		end
-
-		function metatable:fielditerinner(fields)
-			assert(self.fielditerinner)
-			assert(fields)
-			assert(type(fields) == 'table')
-			for _,field in ipairs(fields) do
-				if not field.no_iter then
-					local ctype = field.type
-					if field.name then
-						assert(not field.anonymous)
-						coroutine.yield(field.name, ctype, field)
-					else
-						assert(ctype.anonymous)
-						if struct:isa(ctype) then
-							assert(ctype.fields)
-							self:fielditerinner(ctype.fields)
-						end
-					end
-				end
-			end
-		end
-
-		function metatable:toLua()
-			local result = {}
-			for name, ctype, field in self:fielditer() do
-				if not field.no_tolua then
-					local value = self[name]
-					if struct:isa(ctype) then
-						value = value:toLua()
-					end
-					result[name] = value
-				end
-			end
-			return result
-		end
-
-		function metatable:__tostring()
-			local t = table()
-			for name, ctype, field in self:fielditer() do
-				if not field.no_tostring then
-					assert(name)
-					local s = self:fieldToString(name, ctype)
-					if s
-					-- hmm... bad hack
-					and s ~= '{}'
-					then
-						t:insert((name or '?')..'='..s)
-					end
-				end
-			end
-			return '{'..t:concat', '..'}'
-		end
-
-		function metatable:fieldToString(name, ctype)
-			if struct:isa(ctype) then
-				ctype = ctype.name
-			end
-			-- special for bitflags ...
-			if type(ctype) == 'string'
-			and ctype:sub(-2) == ':1'
-			then
-				if self[name] ~= 0 then
-					return 'true'
-				else
-					return nil -- nothing
-				end
-			end
-
-			return (struct.typeToString[ctype] or tostring)(self[name])
-		end
-
-		metatable.__concat = string.concat
-
-		metatable.__eq = function(a,b)
-			local function isprim(x)
-				return ({
-					['nil'] = true,
-					boolean = true,
-					number = true,
-					string = true,
-				})[type(x)]
-			end
-			if isprim(a) or isprim(b) then return rawequal(a,b) end
-			for _,field in ipairs(fields) do
-				local name = field.name
-				local ctype = field.type
-				if a[name] ~= b[name] then return false end
-			end
-			return true
-		end
 
 		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
 		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
