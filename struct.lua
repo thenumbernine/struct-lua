@@ -58,6 +58,10 @@ function struct.hextostr(digits)
 	end
 end
 
+local function newmember(mt, ...)
+	return ffi.new(mt.name, ...)
+end
+
 struct.typeToString = {
 	uint8_t = struct.dectostr,
 	uint16_t = struct.dectostr,
@@ -174,6 +178,7 @@ end
 	end
 
 	local metatype
+	local metatable
 	local res, err = xpcall(function()
 		if args.cdef ~= false then
 			ffi.cdef(codes.c)
@@ -181,7 +186,7 @@ end
 
 		-- also in common with my hydro-cl project
 		-- consider merging
-		local metatable = {
+		metatable = {
 			name = name,
 			anonymous = anonymous,
 			fields = fields,
@@ -292,22 +297,20 @@ end
 				return true
 			end,
 		}
-		-- [[ throws errors if the C field isn't present
-		metatable.__index = metatable
+
+		metatable = class(struct, metatable)
+		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
+		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
+
+		-- [[ luajit behavior: throws errors if the C field isn't present
+		-- this is also default for class()
+		--metatable.__index = metatable
 		--]]
 		--[[ doesn't throw errors if the C field isn't present.  probably runs slower.
 		-- but this doesn't help by field detect in the case of cdata unless every single cdef metamethod __index is set to a function instead of a table...
+		-- also makes luajit cdata behave the same as lua tables.
 		metatable.__index = function(t,k) return metatable[k] end
 		--]]
-
-
-		-- to match ext.class
-		metatable.class = metatable
-		metatable.super = struct
-		metatable.isaSet = {}
-		metatable.isaSet[metatable] = true
-		-- TODO merge struct.isaSet here (or is struct a class() ?)
-		metatable.isaSet[struct] = true
 
 		if args.metatable then
 			args.metatable(metatable)
@@ -319,10 +322,8 @@ end
 		-- also if we were told not to cdef then we can't get a metatype
 		and args.cdef ~= false
 		then
+			-- 'metatype' returned is the ffi.typeof(name)
 			metatype = ffi.metatype(name, metatable)
-		else
-			-- notice now 'metatype' i.e. what is returned is not a ffi.cdata ...
-			metatype = metatable
 		end
 
 	end, function(err)
@@ -334,10 +335,13 @@ end
 	end)
 	if not res then error(err) end
 
-	assert(struct:isa(metatype))
+	assert(struct:isa(metatable))
+	if metatype then
+		assert(struct:isa(metatype))
+	end
 
 	-- NOTICE ffi.metatype returns the same as ffi.typeof
-	return metatype
+	return metatype or metatable
 end
 
 -- instead of creating a struct instance, create a metatype subclass
@@ -351,4 +355,5 @@ struct.union = function(args)
 	return struct(args)
 end
 
+-- 'struct' is / should be the parent class of all created structures
 return struct
