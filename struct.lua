@@ -58,14 +58,14 @@ function struct.hextostr(digits)
 	end
 end
 
-local function newmember(mt, ...)
-	return ffi.new(mt.name, ...)
-end
-
 struct.typeToString = {
 	uint8_t = struct.dectostr,
 	uint16_t = struct.dectostr,
 }
+
+local function newmember(mt, ...)
+	return ffi.new(mt.name, ...)
+end
 
 --[[
 this generate both the C and C++ code
@@ -301,16 +301,6 @@ end
 		metatable = class(struct, metatable)
 		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
 		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
-
-		-- [[ luajit behavior: throws errors if the C field isn't present
-		-- this is also default for class()
-		--metatable.__index = metatable
-		--]]
-		--[[ doesn't throw errors if the C field isn't present.  probably runs slower.
-		-- but this doesn't help by field detect in the case of cdata unless every single cdef metamethod __index is set to a function instead of a table...
-		-- also makes luajit cdata behave the same as lua tables.
-		metatable.__index = function(t,k) return metatable[k] end
-		--]]
 
 		if args.metatable then
 			args.metatable(metatable)
