@@ -334,7 +334,6 @@ end
 		assert(struct:isa(metatype))
 	end
 
-	-- NOTICE ffi.metatype returns the same as ffi.typeof
 	return metatype or metatable
 end
 
