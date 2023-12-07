@@ -1,12 +1,5 @@
 --[[
-TODO merge with vec-ffi and hydro-cl's struct
-
-also TODO more flexible.
-- no default union
-- support for anonymous structs
-- support for packed
-
-where is this used? since I'm about to overhaul it ...
+where is this used?
 cl/obj/env.lua		... just uses struct:isa
 efesoln-cl/efe.lua
 super_metroid_randomizer/
@@ -29,7 +22,7 @@ local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
 
--- 'isa' for LUa classes and ffi metatypes
+-- 'isa' for Lua classes and ffi metatypes
 local function isa(cl, obj)
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
@@ -44,9 +37,11 @@ local function isa(cl, obj)
 		if not res then return false end
 	elseif luatype ~= 'table' then
 	--	return false
+	-- else return false?
 	end
-	if not op.safeindex(obj, 'isaSet') then return false end
-	return obj.isaSet[cl] or false
+	local isaSet = op.safeindex(obj, 'isaSet')
+	if not isaSet then return false end
+	return isaSet[cl] or false
 end
 
 local struct = class()
@@ -69,12 +64,19 @@ struct.typeToString = {
 }
 
 --[[
+this generate both the C and C++ code
+then ffi.cdef's the C code only
+
 args:
 	name = (optional) struct name
 	anonymous = (optional) set to 'true' for inner-anonymous structs
 		either name or anonymous must be set
 	union = (optional) set to 'true' for unions, default false for structs
-	cpp = (optional) set to 'true' to use `struct <name> { ... }` instead of `typedef struct { ... } <name>`
+	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
+	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
+	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields
+	body = (optional) provide extra body code for the C++ generation
+
 	fields = table of ...
 		name = string.  required unless the type is an anonymous struct.
 		type = struct-type, cdata, or string of ffi c type
@@ -82,33 +84,30 @@ args:
 		no_tostring = (optional) set to 'true' to omit this from tostring
 		no_tolua = (optional) set to 'true' to omit from toLua()
 		... tempting to make fields just an enumeration of the integer children ...
-		value = (optional) string to set as the default value - but only if cpp is true.
-	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
-	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
-	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields ... TODO specify this per-field? or allow both?
+		value = (optional) string to set as the default value
+		packed = (optional) set to 'true' to add __attribute__((packed)) to this field. TODO more attributes?
 
-	TODO
-	- option to disable the 'typedef' for C structs and just use a `struct <name>` type?
-	- option to insert code into the struct body (esp for C++)
+TODO
+- option to disable the 'typedef' for C structs and just use a `struct <name>` type?
 --]]
 local function newStruct(args)
 	local name = args.name
 	local anonymous = args.anonymous
 	assert(args.name or args.anonymous)
 	local fields = assert(args.fields)
-	local union = args.union
-	local packed = args.packed
-	local cpp = args.cpp
-	local code = template([[
+	assert(not struct:isa(fields))
+	local codes = {}
+	for _,cpp in ipairs{false, true} do
+		codes[cpp and 'cpp' or 'c'] = template([[
 <?
 if name then
 	if cpp then
-?><?=union and "union" or "struct"?> <?=name?> {
+?><?=args.union and "union" or "struct"?> <?=name?> {
 <?	else
-?>typedef <?=union and "union" or "struct"?> <?=name?> {
+?>typedef <?=args.union and "union" or "struct"?> <?=name?> {
 <?	end
 else -- anonymous (inner) structs:
-?><?=union and "union" or "struct"?> {
+?><?=args.union and "union" or "struct"?> {
 <?
 end
 local ffi = require 'ffi'
@@ -140,7 +139,7 @@ for _,field in ipairs(fields) do
 			error("you are here")
 		end
 ?>	<?=ctype?> <?
-		if packed then
+		if args.packed or field.packed then
 			?>__attribute__((packed))<?
 		end
 		?><?=name and (' '..name) or ''
@@ -152,31 +151,33 @@ for _,field in ipairs(fields) do
 		?>;
 <?	end
 end
+if cpp and args.body then
+?><?=args.body?>
+<?
+end
 if cpp then
 ?>};<?
 else
 ?>}<?=name and (' '..name) or ''?>;<?
 end
 ?>]],
-		{
-			ffi = ffi,
-			anonymous = anonymous,
-			name = name,
-			union = union,
-			cpp = cpp,
-			fields = fields,
-			struct = struct,
-			packed = packed,
-		}
-	)
+			{
+				ffi = ffi,
+				anonymous = anonymous,
+				name = name,
+				cpp = cpp,
+				fields = fields,
+				struct = struct,
+				args = args,
+			}
+		)
+	end
 
 	local metatype
-	xpcall(function()
+	local res, err = xpcall(function()
 		if args.cdef ~= false then
-			ffi.cdef(code)
+			ffi.cdef(codes.c)
 		end
-
-		assert(not struct:isa(fields))
 
 		-- also in common with my hydro-cl project
 		-- consider merging
@@ -185,11 +186,10 @@ end
 			anonymous = anonymous,
 			fields = fields,
 
-			-- TODO vec-ffi's typeCode
-			-- ... also check what hydro-cl's struct uses, probably typeCode also
-			code = code,
+			code = codes.c,
+			cppcode = codes.cpp,
 
-			-- TODO similar to ext.class and vec-ffi/create_vec.lua
+			-- TODO similar to ext.class ...
 			isa = isa,
 
 			-- iterate across all named fields of the struct
@@ -325,53 +325,17 @@ end
 			metatype = metatable
 		end
 
---[[
-		if packed then
-			local sizeOfFields = table.mapi(fields, function(field)
-				local fieldName = field.name
-				local fieldType = field.type
--- TODO what if it's a ctype ...
-				local rest, bits = fieldType:match'^(.*):(%d+)$'
-				local base, array = fieldType:match'^(.*)%[(%d+)%]$'
-				if bits then
-					assert(not array)
-					return bits / 8
-				else
-					return ffi.sizeof(fieldType)
-				end
-			end):sum()
-			local sizeof = ffi.sizeof(name)
-			if sizeof ~= sizeOfFields then
-				error(
-					"sizeof("..name..") = "..sizeof.."\n"
-					.."sizeof fields = "..sizeOfFields.."\n"
-					.."struct "..name.." isn't packed!"
-				)
-			end
-		end
---]]
---[[
-		local null = ffi.cast(name..'*', nil)
-		local sizeOfFields = table.mapi(fields, function(field)
-			local fieldName = field.name
-			local fieldType = field.type
-			return ffi.sizeof(null[fieldName])
-		end):sum()
-		if ffi.sizeof(name) ~= sizeOfFields then
-			io.stderr:write("struct "..name.." isn't packed!\n")
-			for _,field in ipairs(fields) do
-				local fieldName = field.name
-				local fieldType = field.type
-				io.stderr:write('field '..fieldName..' size '..ffi.sizeof(null[fieldName]),'\n')
-			end
-		end
---]]
 	end, function(err)
-		io.stderr:write(require 'template.showcode'(code),'\n')
-		io.stderr:write(err,'\n',debug.traceback(),'\n')
-		os.exit(1)
+		return '\n'
+			..require 'template.showcode'(codes.c)..'\n'
+			..require 'template.showcode'(codes.cpp)..'\n'
+			..tostring(err)..'\n'
+			..debug.traceback()
 	end)
-assert(struct:isa(metatype))
+	if not res then error(err) end
+
+	assert(struct:isa(metatype))
+
 	-- NOTICE ffi.metatype returns the same as ffi.typeof
 	return metatype, code
 end
