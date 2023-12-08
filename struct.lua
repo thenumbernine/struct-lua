@@ -21,7 +21,7 @@ local string = require 'ext.string'
 local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
-
+local showcode = require 'template.showcode'
 local struct = class()
 
 -- [=[ begin functions for child metatable classes
@@ -146,19 +146,16 @@ end
 
 struct.__concat = string.concat
 
-local function isprim(x)
-	return ({
-		['nil'] = true,
-		boolean = true,
-		number = true,
-		string = true,
-	})[type(x)]
-end
-
 -- assigned to metatable.new
 -- I'd put it in struct:new, but that's already being used to create new structs...
 local function newmember(mt, ...)
 	return ffi.new(mt.name, ...)
+end
+
+-- this depends on :unpack() , which is defined in the codegen below
+-- TODO between this and ffi.cpp.vector, one is toTable the other is totable ... which to use?
+function struct:toTable()
+	return {self:unpack()}
 end
 
 --]=] end functions for child metatable classes
@@ -275,6 +272,7 @@ end
 
 	local metatype
 	local metatable
+	local metacode
 	local res, err = xpcall(function()
 		if args.cdef ~= false then
 			ffi.cdef(codes.c)
@@ -297,38 +295,69 @@ end
 		-- and we have .field assigned,
 		-- we can use :fielditer()
 		-- and use it to generate code (and inline some functions that would otherwise be slow)
-		assert(load(template([[
-local metatable = ...
+		metacode = template([[
+local ffi = require 'ffi'
+local metatable, args = ...
+local metatype
+
 metatable.__eq = function(a,b)
 	if getmetatable(a) ~= getmetatable(b) then return false end
-	return true <?
+	return <?
+local first = true
 for name, ctype in metatable:fielditer() do
-?> and a.<?=name?> == b.<?=name?><?
+?><?=first and '' or ' and '?>a.<?=name?> == b.<?=name?><?
+	first = false
 end
 ?>
 end
+
+function metatable:unpack()
+	return <?
+local first = true
+for name, ctype in metatable:fielditer() do
+?><?=first and '' or ', '?>self.<?=name?><?
+	first = false
+end
+?>
+end
+
+-- TODO just use ffi.new ?  but that requires a typename still ...
+function metatable:clone()
+	return metatype(self:unpack())
+end
+
+-- do this in here so metatype can be in here too
+-- TODO performance loss due to extra closures?
+-- is it worth it from the perf gain from inlining these functions?
+
+if args.metatable then
+	args.metatable(metatable)
+end
+-- if we don't have a name then can we set a metatype?
+-- in fact, even if we have a name as a typedef to an anonymous struct,
+--  ffi still gives the cdata type a number instead of a name
+if metatable.name
+-- also if we were told not to cdef then we can't get a metatype
+and args.cdef ~= false
+then
+	-- 'metatype' returned is the ffi.typeof(name)
+	metatype = ffi.metatype(metatable.name, metatable)
+end
+
+return metatype
 ]], {
+	args = args,
 	metatable = metatable,
-})))(metatable)
-
-		if args.metatable then
-			args.metatable(metatable)
-		end
-		-- if we don't have a name then can we set a metatype?
-		-- in fact, even if we have a name as a typedef to an anonymous struct,
-		--  ffi still gives the cdata type a number instead of a name
-		if name
-		-- also if we were told not to cdef then we can't get a metatype
-		and args.cdef ~= false
-		then
-			-- 'metatype' returned is the ffi.typeof(name)
-			metatype = ffi.metatype(name, metatable)
-		end
-
+})
+		metatype = assert(load(metacode))(metatable, args)
 	end, function(err)
 		return '\n'
-			..require 'template.showcode'(codes.c)..'\n'
-			..require 'template.showcode'(codes.cpp)..'\n'
+			..'c code:\n'
+			..showcode(codes.c)..'\n'
+			..'c++ code:\n'
+			..showcode(codes.cpp)..'\n'
+			..'inline metamethod code:\n'
+			..showcode(metacode)..'\n'
 			..tostring(err)..'\n'
 			..debug.traceback()
 	end)
