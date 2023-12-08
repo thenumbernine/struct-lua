@@ -51,35 +51,32 @@ end
 
 -- iterate across all named fields of the struct
 -- including anonymous-inner structs
--- TODO just use __pairs ?
+-- TODO just use __pairs ? though note that __pairs metamethod doesn't exist in <=5.1
 function struct:fielditer()
-	if self.fielditerinner then
-		return coroutine.wrap(function()
-			self:fielditerinner(self.fields)
-		end)
-	else
-		-- anonymous?
-	end
+	return self.fielditerinner, {
+		self = self,
+		fields = table(self.fields),
+	}
 end
+-- static method, used with the fielditer
+function struct.fielditerinner(state)
+	local self = state.self
+	if #state.fields == 0 then return end
+	local field = state.fields:remove(1)
+	if field.no_iter then return struct.fielditerinner(state) end
 
-function struct:fielditerinner(fields)
-	assert(self.fielditerinner)
-	assert(fields)
-	assert(type(fields) == 'table')
-	for _,field in ipairs(fields) do
-		if not field.no_iter then
-			local ctype = field.type
-			if field.name then
-				assert(not field.anonymous)
-				coroutine.yield(field.name, ctype, field)
-			else
-				assert(ctype.anonymous)
-				if struct:isa(ctype) then
-					assert(ctype.fields)
-					self:fielditerinner(ctype.fields)
-				end
-			end
+	local ctype = field.type
+	if field.name then
+		assert(not field.anonymous)
+		return field.name, ctype, field
+	end
+	assert(ctype.anonymous)
+	if struct:isa(ctype) then
+		assert(ctype.fields)
+		for i=#ctype.fields,1,-1 do
+			state.fields:insert(1, ctype.fields[i])
 		end
+		return struct.fielditerinner(state)
 	end
 end
 
