@@ -300,13 +300,12 @@ end
 		assert(load(template([[
 local metatable = ...
 metatable.__eq = function(a,b)
-	if isprim(a) or isprim(b) then return rawequal(a,b) end			-- already automatic?
-	if getmetatable(a) ~= getmetatable(b) then return false end 	-- already automatic?
-	-- by now the metatypes should match
-<?	for name, ctype in metatable:fielditer() do
-?>	if a.<?=name?> ~= b.<?=name?> then return false end
-<?	end
-?>	return true
+	if getmetatable(a) ~= getmetatable(b) then return false end
+	return true <?
+for name, ctype in metatable:fielditer() do
+?> and a.<?=name?> == b.<?=name?><?
+end
+?>
 end
 ]], {
 	metatable = metatable,
