@@ -94,23 +94,6 @@ function struct:toLua()
 	return result
 end
 
-function struct:__tostring()
-	local t = table()
-	for name, ctype, field in self:fielditer() do
-		if not field.no_tostring then
-			assert(name)
-			local s = self:fieldToString(name, ctype)
-			if s
-			-- hmm... bad hack
-			and s ~= '{}'
-			then
-				t:insert((name or '?')..'='..s)
-			end
-		end
-	end
-	return '{'..t:concat', '..'}'
-end
-
 function struct.dectostr(value)
 	return ('%d'):format(value)
 end
@@ -299,6 +282,22 @@ end
 local ffi = require 'ffi'
 local metatable, args = ...
 local metatype
+
+function metatable:__tostring()
+	return '{'
+<?
+local first = true
+for name, ctype, field in metatable:fielditer() do
+	if not field.no_tostring then
+	-- TODO ctype might not be a string...
+	-- TODO before I had so if fieldToString returned {} then I'd just skip it
+?>		.. <?=first and '' or "', ' .." ?>self:fieldToString('<?=name?>', '<?=ctype?>')
+<?	end
+	first = false
+end
+?>
+		.. '}'
+end
 
 metatable.__eq = function(a,b)
 	if getmetatable(a) ~= getmetatable(b) then return false end
