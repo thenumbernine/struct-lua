@@ -155,16 +155,6 @@ local function isprim(x)
 	})[type(x)]
 end
 
-struct.__eq = function(a,b)
-	if isprim(a) or isprim(b) then return rawequal(a,b) end			-- already automatic?
-	if getmetatable(a) ~= getmetatable(b) then return false end 	-- already automatic?
-	-- by now the metatypes should match
-	for name, ctype in a:fielditer() do
-		if a[name] ~= b[name] then return false end
-	end
-	return true
-end
-
 -- assigned to metatable.new
 -- I'd put it in struct:new, but that's already being used to create new structs...
 local function newmember(mt, ...)
@@ -302,6 +292,25 @@ end
 
 		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
 		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
+
+		-- now that we have struct as 'metatable's metatable
+		-- and we have .field assigned,
+		-- we can use :fielditer()
+		-- and use it to generate code (and inline some functions that would otherwise be slow)
+		assert(load(template([[
+local metatable = ...
+metatable.__eq = function(a,b)
+	if isprim(a) or isprim(b) then return rawequal(a,b) end			-- already automatic?
+	if getmetatable(a) ~= getmetatable(b) then return false end 	-- already automatic?
+	-- by now the metatypes should match
+<?	for name, ctype in metatable:fielditer() do
+?>	if a.<?=name?> ~= b.<?=name?> then return false end
+<?	end
+?>	return true
+end
+]], {
+	metatable = metatable,
+})))(metatable)
 
 		if args.metatable then
 			args.metatable(metatable)
