@@ -351,12 +351,12 @@ return metatype
 		metatype = assert(load(metacode))(metatable, args)
 	end, function(err)
 		return '\n'
-			..'c code:\n'
-			..showcode(codes.c)..'\n'
-			..'c++ code:\n'
-			..showcode(codes.cpp)..'\n'
-			..'inline metamethod code:\n'
-			..showcode(metacode)..'\n'
+			..(codes.c and ('c code:\n'
+			..showcode(codes.c)..'\n') or '')
+			..(codes.cpp and ('c++ code:\n'
+			..showcode(codes.cpp)..'\n') or '')
+			..(metacode and ('inline metamethod code:\n'
+			..showcode(metacode)..'\n') or '')
 			..tostring(err)..'\n'
 			..debug.traceback()
 	end)
