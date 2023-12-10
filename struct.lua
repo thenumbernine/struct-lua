@@ -156,6 +156,7 @@ args:
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
 	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields
 	body = (optional) provide extra body code for the C++ generation
+	tostringFields = (optional) set to use fields in the serialization
 
 	fields = table of ...
 		name = string.  required unless the type is an anonymous struct.
@@ -291,7 +292,11 @@ for name, ctype, field in metatable:fielditer() do
 	if not field.no_tostring then
 	-- TODO ctype might not be a string...
 	-- TODO before I had so if fieldToString returned {} then I'd just skip it
-?>		.. <?=first and '' or "', ' .." ?>self:fieldToString('<?=name?>', '<?=ctype?>')
+?>		.. <?=first and '' or "', ' .." ?><?
+		if args.tostringFields then
+			?>'<?=name?>='..<?
+		end
+		?>self:fieldToString('<?=name?>', '<?=ctype?>')
 <?	end
 	first = false
 end
