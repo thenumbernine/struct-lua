@@ -85,7 +85,7 @@ function struct:toLua()
 	for name, ctype, field in self:fielditer() do
 		if not field.no_tolua then
 			local value = self[name]
-			if struct:isa(ctype) then
+			if struct:isa(ctype) then	-- TODO just test .toLua ?
 				value = value:toLua()
 			end
 			result[name] = value
@@ -367,6 +367,8 @@ return metatype
 		assert(struct:isa(metatype))
 	end
 
+	-- TODO or maybe I should return the metatable always
+	--  and rely on ffi.typeof(name) for getting its metatype?
 	return metatype or metatable
 end
 
