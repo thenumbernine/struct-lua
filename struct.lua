@@ -1,6 +1,6 @@
 --[[
 where is this used?
-cl/obj/env.lua		... just uses struct:isa
+cl/obj/env.lua
 efesoln-cl/efe.lua
 super_metroid_randomizer/
 ff6-hacking/editor-lua
@@ -9,11 +9,8 @@ ff6-randomizer/
 ljvm/
 mesh/readfbx.lua
 vec-ffi/create_vec.lua
-
-↑↑↑ fixed ↑↑↑
-
-TODO
-hydro-cl ... has its own version
+hydro-cl
+modules
 --]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
