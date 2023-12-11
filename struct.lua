@@ -174,7 +174,7 @@ TODO
 local function newStruct(args)
 	local name = args.name
 	local anonymous = args.anonymous
-	assert(args.name or args.anonymous)
+	assert(args.name or args.anonymous, "expected .name or .anonymous")
 	local fields = assert(args.fields)
 	assert(not struct:isa(fields))
 	local codes = {}
