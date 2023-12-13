@@ -26,6 +26,7 @@ local op = require 'ext.op'
 local class = require 'ext.class'
 local template = require 'template'
 local showcode = require 'template.showcode'
+
 local struct = class()
 
 -- [=[ begin functions for child metatable classes
