@@ -1,4 +1,11 @@
 --[[
+TODO
+- should I use a static functin for creating struct subclasses (instead of overriding the struct ctor) ?
+- helper function for counting dense size (of all fields ... max for union, sum for struct)
+- helper function for making a union + ptr + struct (since it was common enough)
+- always return the metatable?
+- don't define bits or arrays in the .type string, instead use numbers/Lua keys .bits and .array
+
 where is this used?
 cl/obj/env.lua
 efesoln-cl/efe.lua
@@ -25,6 +32,8 @@ local struct = class()
 
 -- 'isa' for Lua classes and ffi metatypes
 -- TODO similar to ext.class ...
+-- TODO TODO it's probably a bad idea to have this handle strings as if they're types ...
+-- it is ugly enough that it handles Lua table metatypes *and* ffi cdata
 function struct.isa(cl, obj)
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
@@ -200,10 +209,12 @@ for _,field in ipairs(fields) do
 			local rest
 			rest, bits = ctype:match'^(.*):(%d+)$'
 			if bits then
+				field.bits = bits
 				ctype = rest
 			end
 			local base, array = ctype:match'^(.*)%[(%d+)%]$'
 			if array then
+				field.array = array
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
@@ -241,7 +252,6 @@ end
 ?>]],
 			{
 				ffi = ffi,
-				anonymous = anonymous,
 				name = name,
 				cpp = cpp,
 				fields = fields,
@@ -264,7 +274,45 @@ end
 		metatable = class(struct)
 		metatable.name = name
 		metatable.anonymous = anonymous
+		metatable.union = args.union
 		metatable.fields = fields
+
+--[=[ store sizes in metatable, especially packed size of all fields
+		--[[ hmm, why is it that sometimes the field types haven't yet been defined?  is that even possible?
+		if not metatable.anonymous and args.cdef ~= false then
+			metatable.sizeof = ffi.sizeof(metatable.name)
+		end
+		--]]
+
+		-- calculate packed size
+		-- don't use fielditer in case it's a union and we're finding the packed-size of an anonymous struct ...
+		do
+			local packedSize = 0
+			for _,field in ipairs(metatable.fields) do
+				local fieldSize
+				local fieldType = field.type
+				if type(fieldType) == 'string' then
+					if field.bits then
+						fieldSize = field.bits / 8
+					else
+						fieldSize = ffi.sizeof(fieldType)
+					end
+				elseif struct:isa(fieldType) then
+					fieldSize = fieldType.sizeof or fieldType.packedSize	-- .anonymous won't have .sizeof since it has no name
+					assert(fieldSize, "failed to find .sizeof or .packedSize for fieldType:\n"..require 'ext.tolua'(fieldType))
+					-- TODO how to infer its name ... I don't think you can without a typedef somewhere, and that isn't compat with inner anonymous structs ... so all inner structs would need to be moved outside ...
+				else
+					error'here'
+				end
+				if union then
+					packedSize = math.max(packedSize, fieldSize)
+				else
+					packedSize = packedSize + fieldSize
+				end
+			end
+			metatable.packedSize = math.ceil(packedSize)
+		end
+--]=]
 
 		metatable.code = codes.c
 		metatable.cppcode = codes.cpp
@@ -345,6 +393,8 @@ then
 	metatype = ffi.metatype(metatable.name, metatable)
 end
 
+metatable.metatype = metatype
+
 return metatype
 ]], {
 	args = args,
@@ -377,12 +427,6 @@ end
 -- instead of creating a struct instance, create a metatype subclass
 function struct:new(...)
 	return newStruct(...)
-end
-
--- helper function
-struct.union = function(args)
-	args.union = true
-	return struct(args)
 end
 
 -- 'struct' is / should be the parent class of all created structures
