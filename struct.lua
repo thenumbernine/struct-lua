@@ -394,6 +394,8 @@ then
 	metatype = ffi.metatype(metatable.name, metatable)
 end
 
+-- TODO ffi says do not touch the metatable, or its __index, after assigning to ffi.metatype ... hmmmmm
+-- but on the other hand, is there a ffi mechanism for getting the metatype table from a ctype ?
 metatable.metatype = metatype
 
 return metatype
