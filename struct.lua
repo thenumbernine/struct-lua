@@ -372,6 +372,7 @@ end
 end
 
 -- TODO just use ffi.new ?  but that requires a typename still ...
+-- also TODO, looks like if args.cdef == false then metatype won't be set and this won't work
 function metatable:clone()
 	return metatype(self:unpack())
 end
@@ -383,6 +384,7 @@ end
 if args.metatable then
 	args.metatable(metatable)
 end
+
 -- if we don't have a name then can we set a metatype?
 -- in fact, even if we have a name as a typedef to an anonymous struct,
 --  ffi still gives the cdata type a number instead of a name
@@ -393,10 +395,6 @@ then
 	-- 'metatype' returned is the ffi.typeof(name)
 	metatype = ffi.metatype(metatable.name, metatable)
 end
-
--- TODO ffi says do not touch the metatable, or its __index, after assigning to ffi.metatype ... hmmmmm
--- but on the other hand, is there a ffi mechanism for getting the metatype table from a ctype ?
-metatable.metatype = metatype
 
 return metatype
 ]], {
