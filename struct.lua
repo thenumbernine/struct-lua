@@ -277,6 +277,12 @@ end
 		metatable.anonymous = anonymous
 		metatable.union = args.union
 		metatable.fields = fields
+		-- with luajit, ffi.typeof(cdata) returns the 'ctype' object (not the ffi.metatype)
+		--  getmetatable(cdata) returns the string "ffi" (not the ffi.metatype)
+		--  debug.getmetatable(cdata) returns an internal metatable (not the ffi.metatype)
+		--  and ffi.metatype without a 2nd arg still just complains
+		-- so is there no way to get a cdata ffi.metatype() metatable other than by setting it in the metatable's __index table?
+		metatable.metatable = metatable
 
 --[=[ store sizes in metatable, especially packed size of all fields
 		--[[ hmm, why is it that sometimes the field types haven't yet been defined?  is that even possible?
