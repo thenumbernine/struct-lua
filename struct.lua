@@ -127,7 +127,7 @@ function struct:fieldToString(name, ctype)
 		if self[name] ~= 0 then
 			return 'true'
 		else
-			return nil -- nothing
+			return 'false' -- nothing
 		end
 	end
 
