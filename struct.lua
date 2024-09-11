@@ -226,7 +226,7 @@ for _,field in ipairs(fields) do
 				ctype = ctype.code
 			end
 		else
-			error("you are here")
+			error("field type is not a string or a struct: "..tostring(ctype))
 		end
 ?>	<?=ctype?> <?
 		if args.packed or field.packed then
