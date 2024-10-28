@@ -336,6 +336,8 @@ local ffi = require 'ffi'
 local metatable, args = ...
 local metatype
 
+<? if not args.notostring then 	-- cheap hack to disable default tostring because it gets errors in big structures
+?>
 function metatable:__tostring()
 	return '{'
 <?
@@ -355,6 +357,8 @@ end
 ?>
 		.. '}'
 end
+<? end -- args.notostring
+?>
 
 metatable.__eq = function(a,b)
 	if getmetatable(a) ~= getmetatable(b) then return false end
