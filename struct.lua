@@ -164,6 +164,10 @@ args:
 	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields
 	body = (optional) provide extra body code for the C++ generation
 	tostringFields = (optional) set to use fields in the serialization
+	notostring = (optional) cheap hack to disable default tostring because it gets errors in big structures
+	tostringOmitFalse = (optional) tostring method will omit 'false' values.  only works with `tostringFields`.
+	tostringOmitNil = (optional) tostring method will omit 'nil' and nil values.  only works with `tostringFields`.
+	tostringOmitEmpty = (optional) tostring method will omit '{}' values.  only works with `tostringFields`.
 
 	fields = table of ...
 		name = string.  required unless the type is an anonymous struct.
@@ -339,23 +343,46 @@ local metatype
 <? if not args.notostring then 	-- cheap hack to disable default tostring because it gets errors in big structures
 ?>
 function metatable:__tostring()
-	return '{'
+	local s = '{'
 <?
 local first = true
 for name, ctype, field in metatable:fielditer() do
 	if not field.no_tostring then
 	-- TODO ctype might not be a string...
 	-- TODO before I had so if fieldToString returned {} then I'd just skip it
-?>		.. <?=first and '' or "', ' .." ?><?
 		if args.tostringFields then
-			?>'<?=name?>='..<?
-		end
-		?>self:fieldToString('<?=name?>', '<?=ctype?>')
-<?	end
+			if args.tostringOmitFalse
+			or args.tostringOmitNil
+			or args.tostringOmitEmpty
+			then
+?>
+	local v = self:fieldToString('<?=name?>', '<?=ctype?>')
+	if true
+<?
+				if args.tostringOmitFalse then
+?>	and v ~= 'false' and v ~= false
+<?				end
+				if args.tostringOmitNil then
+?>	and v ~= 'nil' and v ~= nil
+<?				end
+				if args.tostringOmitEmpty then
+?>	and v ~= '{}'
+<?				end
+?>	then
+		s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..v
+	end
+<?			else
+?>	s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..self:fieldToString('<?=name?>', '<?=ctype?>')
+<?			end
+		else
+?>	s = s .. <?=first and '' or "', ' .." ?>self:fieldToString('<?=name?>', '<?=ctype?>')
+<?		end
+	end
 	first = false
 end
 ?>
-		.. '}'
+	s = s .. '}'
+	return s
 end
 <? end -- args.notostring
 ?>
@@ -412,6 +439,18 @@ return metatype
 	metatable = metatable,
 })
 		metatype = assert(load(metacode))(metatable, args)
+--[[
+print('\n'
+			..(codes.c and ('c code:\n'
+			..showcode(codes.c)..'\n') or '')
+			..(codes.cpp and ('c++ code:\n'
+			..showcode(codes.cpp)..'\n') or '')
+			..(metacode and ('inline metamethod code:\n'
+			..showcode(metacode)..'\n') or '')
+			..tostring(err)..'\n'
+			..debug.traceback()
+)
+--]]
 	end, function(err)
 		return '\n'
 			..(codes.c and ('c code:\n'
