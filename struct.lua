@@ -38,21 +38,27 @@ local struct = class()
 function struct.isa(cl, obj)
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
---print('got lua type', luatype)
+--DEBUG:print('got lua type', luatype)
 	if luatype == 'string'
 	or luatype == 'cdata'
 	then
 		-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
 		local res
---print('converting to cdata: '..tostring(obj))
+--DEBUG:print('converting to cdata: '..tostring(obj))
 		res, obj = pcall(ffi.typeof, obj)
+--DEBUG:print('... got ffi.typeof(cdata) to be', res, obj)
 		if not res then return false end
 	elseif luatype ~= 'table' then
 	--	return false
 	-- else return false?
 	end
 	local isaSet = op.safeindex(obj, 'isaSet')
-	if not isaSet then return false end
+--DEBUG:print('isaSet for obj', isaSet)
+	if not isaSet then
+--DEBUG:print('isaSet not found - failing')
+		return false
+	end
+--DEBUG:print('isaSet[cl]', isaSet[cl])
 	return isaSet[cl] or false
 end
 
@@ -465,9 +471,22 @@ print('\n'
 	if not res then error(err) end
 
 	assert(struct:isa(metatable))
+
+	-- wait is this true? when is struct set in the metatype's isaSet?
+	--[[
+	fun fact, ffi.metatype will set the metatable to both any ffi.new/cast instances of the C type
+	but also to the result of ffi.typeof() of the C type
+	but the typeof() isn't the same as an instance, right?
+	how come the typeof() gets the metatable too?
+	weird
+	but why I'm commenting this?
+	because in libffi it doesn't set the ctype's metatable, it only sets the ffi.new/cast instances' metatables
+	--]]
+	--[[
 	if metatype then
 		assert(struct:isa(metatype))
 	end
+	--]]
 
 	-- TODO or maybe I should return the metatable always
 	--  and rely on ffi.typeof(name) for getting its metatype?
