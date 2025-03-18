@@ -38,27 +38,27 @@ local struct = class()
 function struct.isa(cl, obj)
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
---DEBUG:print('got lua type', luatype)
+--DEBUG(struct):print('got lua type', luatype)
 	if luatype == 'string'
 	or luatype == 'cdata'
 	then
 		-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
 		local res
---DEBUG:print('converting to cdata: '..tostring(obj))
+--DEBUG(struct):print('converting to cdata: '..tostring(obj))
 		res, obj = pcall(ffi.typeof, obj)
---DEBUG:print('... got ffi.typeof(cdata) to be', res, obj)
+--DEBUG(struct):print('... got ffi.typeof(cdata) to be', res, obj)
 		if not res then return false end
 	elseif luatype ~= 'table' then
 	--	return false
 	-- else return false?
 	end
 	local isaSet = op.safeindex(obj, 'isaSet')
---DEBUG:print('isaSet for obj', isaSet)
+--DEBUG(struct):print('isaSet for obj', isaSet)
 	if not isaSet then
---DEBUG:print('isaSet not found - failing')
+--DEBUG(struct):print('isaSet not found - failing')
 		return false
 	end
---DEBUG:print('isaSet[cl]', isaSet[cl])
+--DEBUG(struct):print('isaSet[cl]', isaSet[cl])
 	return isaSet[cl] or false
 end
 
