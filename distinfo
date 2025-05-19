@@ -1,0 +1,11 @@
+name = "struct"
+files = {
+	["README.md"] = "struct/README.md",
+	["struct-dev-1.rockspec"] = "struct/struct-dev-1.rockspec",
+	["struct.lua"] = "struct/struct.lua",
+	["test.lua"] = "struct/test.lua",
+}
+deps = {
+	"ext",
+	"template",
+}
