@@ -177,7 +177,7 @@ args:
 
 	fields = table of ...
 		name = string.  required unless the type is an anonymous struct.
-		type = struct-type, cdata, or string of ffi c type
+		type = struct-type, cdata, or ffi c type
 		no_iter = (optional) set to 'true' to omit all iteration, including the following:
 		no_tostring = (optional) set to 'true' to omit this from tostring
 		no_tolua = (optional) set to 'true' to omit from toLua()
@@ -236,7 +236,19 @@ for _,field in ipairs(fields) do
 				ctype = ctype.code
 			end
 		else
-			error("field type is not a string or a struct: "..tostring(ctype))
+			local ctypestr = tostring(ctype)
+			local ctypename = ctypestr:match'^ctype<(.*)>$'
+			if ctypename then
+				ctype = ctypename
+				local base, array = ctype:match'^(.*)%[(%d+)%]$'
+				if array then
+					field.array = array
+					ctype = base
+					name = name .. '[' .. array .. ']'
+				end
+			else
+				error("field type is not a string or a struct: "..tostring(ctype))
+			end
 		end
 ?>	<?=ctype?> <?
 		if args.packed or field.packed then
