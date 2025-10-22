@@ -6,6 +6,10 @@ TODO
 - always return the metatable?
 - don't define bits or arrays in the .type string, instead use numbers/Lua keys .bits and .array
 
+I could replace all types with ffi ctype objects *except*
+- bitfields
+- arrays that are sized by [?] parameter
+
 where is this used?
 cl/obj/env.lua
 efesoln-cl/efe.lua
@@ -137,7 +141,11 @@ function struct:fieldToString(name, ctype)
 		end
 	end
 
-	return (struct.typeToString[ctype] or tostring)(self[name])
+	-- I wanted to make it so you can override 'typeToString' in the metatable but
+	-- hmm not working so well.  is the key `ctype` correct?  does the key exist?
+	local t = op.safeindex(self, 'typeToString') or struct.typeToString
+	local f = t and t[ctype] or tostring
+	return f(self[name])
 end
 
 struct.__concat = string.concat
