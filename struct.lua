@@ -175,7 +175,8 @@ args:
 	union = (optional) set to 'true' for unions, default false for structs
 	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
-	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields
+	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields.  TODO rename this to 'packedFields'.
+	packedStruct = (optional) set to 'true' to __attribute__((packed)) to the struct.
 	body = (optional) provide extra body code for the C++ generation
 	tostringFields = (optional) set to use fields in the serialization
 	notostring = (optional) cheap hack to disable default tostring because it gets errors in big structures
@@ -210,7 +211,11 @@ if name then
 	if cpp then
 ?><?=args.union and "union" or "struct"?> <?=name?> {
 <?	else
-?>typedef <?=args.union and "union" or "struct"?> <?=name?> {
+?>typedef <?=
+	args.packedStruct and "__attribute__((packed)) " or ""
+?><?=
+	args.union and "union" or "struct"
+?> <?=name?> {
 <?	end
 else -- anonymous (inner) structs:
 ?><?=args.union and "union" or "struct"?> {
@@ -384,8 +389,7 @@ for name, ctype, field in metatable:fielditer() do
 ?>
 	local v = self:fieldToString('<?=name?>', '<?=ctype?>')
 	if true
-<?
-				if args.tostringOmitFalse then
+<?				if args.tostringOmitFalse then
 ?>	and v ~= 'false' and v ~= false
 <?				end
 				if args.tostringOmitNil then
@@ -396,15 +400,18 @@ for name, ctype, field in metatable:fielditer() do
 <?				end
 ?>	then
 		s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..v
-	end
-<?			else
+<?				first = false
+?>	end
+<?
+			else
 ?>	s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..self:fieldToString('<?=name?>', '<?=ctype?>')
-<?			end
+<?				first = false
+			end
 		else
 ?>	s = s .. <?=first and '' or "', ' .." ?>self:fieldToString('<?=name?>', '<?=ctype?>')
-<?		end
+<?			first = false
+		end
 	end
-	first = false
 end
 ?>
 	s = s .. '}'
