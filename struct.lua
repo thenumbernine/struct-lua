@@ -205,7 +205,7 @@ local function newStruct(args)
 	assert(not struct:isa(fields))
 	local codes = {}
 	for _,cpp in ipairs{false, true} do
-		codes[cpp and 'cpp' or 'c'] = template([[
+		codes[cpp and 'cpp' or 'c'] = template([=[
 <?
 if name then
 	if cpp then
@@ -236,9 +236,9 @@ for _,field in ipairs(fields) do
 				field.bits = bits
 				ctype = rest
 			end
-			local base, array = ctype:match'^(.*)%[(%d+)%]$'
+			local base, array = ctype:match'^(.*)%[([^%]]*)%]$'
 			if array then
-				field.array = array
+				field.array = assert(tonumber(array), "unable to parse array size "..tostring(array))
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
@@ -253,9 +253,9 @@ for _,field in ipairs(fields) do
 			local ctypename = ctypestr:match'^ctype<(.*)>$'
 			if ctypename then
 				ctype = ctypename
-				local base, array = ctype:match'^(.*)%[(%d+)%]$'
+				local base, array = ctype:match'^(.*)%[([^%]]*)%]$'
 				if array then
-					field.array = array
+					field.array = assert(tonumber(array), "unable to parse array size "..tostring(array))
 					ctype = base
 					name = name .. '[' .. array .. ']'
 				end
@@ -285,7 +285,7 @@ if cpp then
 else
 ?>}<?=name and (' '..name) or ''?>;<?
 end
-?>]],
+?>]=],
 			{
 				ffi = ffi,
 				name = name,
