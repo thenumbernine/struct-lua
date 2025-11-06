@@ -175,8 +175,8 @@ args:
 	union = (optional) set to 'true' for unions, default false for structs
 	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
-	packed = (optional) set to 'true' to add __attribute__((packed)) to all fields.  TODO rename this to 'packedFields'.
-	packedStruct = (optional) set to 'true' to __attribute__((packed)) to the struct.
+	packedFields = (optional) set to 'true' to add __attribute__((packed)) to all fields.
+	packed = (optional) set to 'true' to __attribute__((packed)) to the struct.
 	body = (optional) provide extra body code for the C++ generation
 	tostringFields = (optional) set to use fields in the serialization
 	notostring = (optional) cheap hack to disable default tostring because it gets errors in big structures
@@ -207,18 +207,14 @@ local function newStruct(args)
 	for _,cpp in ipairs{false, true} do
 		codes[cpp and 'cpp' or 'c'] = template([=[
 <?
-if name then
-	if cpp then
-?><?=args.union and "union" or "struct"?> <?=name?> {
-<?	else
-?>typedef <?=
-	args.packedStruct and "__attribute__((packed)) " or ""
-?><?=
-	args.union and "union" or "struct"
-?> <?=name?> {
-<?	end
-else -- anonymous (inner) structs:
-?><?=args.union and "union" or "struct"?> {
+do
+	local prefix = {}
+	if name and not cpp then table.insert(prefix, 'typedef') end
+	if args.packed then table.insert(prefix, '__attribute__((packed))') end
+	table.insert(prefix, args.union and 'union' or 'struct')
+	table.insert(prefix, name)
+	table.insert(prefix, '{')
+	?><?=table.concat(prefix, ' ')?>
 <?
 end
 local ffi = require 'ffi'
@@ -264,7 +260,7 @@ for _,field in ipairs(fields) do
 			end
 		end
 ?>	<?=ctype?> <?
-		if args.packed or field.packed then
+		if args.packedFields or field.packed then
 			?>__attribute__((packed))<?
 		end
 		?><?=name and (' '..name) or ''
