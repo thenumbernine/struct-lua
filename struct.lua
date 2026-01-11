@@ -210,8 +210,8 @@ local function newStruct(args)
 do
 	local prefix = {}
 	if name and not cpp then table.insert(prefix, 'typedef') end
-	if args.packed then table.insert(prefix, '__attribute__((packed))') end
 	table.insert(prefix, args.union and 'union' or 'struct')
+	if args.packed then table.insert(prefix, '__attribute__((packed))') end
 	table.insert(prefix, name)
 	table.insert(prefix, '{')
 	?><?=table.concat(prefix, ' ')?>
