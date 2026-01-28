@@ -1,9 +1,14 @@
+--------------------------------------------
+-- generated with dist/build-distinfo.rua --
+--------------------------------------------
+
 name = "struct"
 files = {
-	["README.md"] = "struct/README.md",
-	["struct-dev-1.rockspec"] = "struct/struct-dev-1.rockspec",
-	["struct.lua"] = "struct/struct.lua",
-	["test.lua"] = "struct/test.lua",
+	"README.md",
+	"distinfo",
+	"struct-dev-1.rockspec",
+	"struct.lua",
+	"test.lua",
 }
 deps = {
 	"ext",
