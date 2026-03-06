@@ -1,4 +1,10 @@
 --[[
+This was first a way to collect reflection, iteration, and serialization info alongside luajit ffi structs.
+Then it became a way to save code between languages (cpp and c) and reuse it between C / OpenCL typedef's and LuaJIT ffi.cdef's.
+It gets more complicated when you look at how hydro-cl would define structs but defer defining their ffi.cdefs until later for some odd reason.
+Now I'm trying to stretch it more for use of luajit anonymous structs and metatypes, which are designed to mimic C++ (though this necessitates the $ type arguments everywhere, which the C typedef code interoperability does not appreciate).
+
+
 TODO
 - should I use a static functin for creating struct subclasses (instead of overriding the struct ctor) ?
 - helper function for counting dense size (of all fields ... max for union, sum for struct)
@@ -11,17 +17,17 @@ I could replace all types with ffi ctype objects *except*
 - arrays that are sized by [?] parameter
 
 where is this used?
-cl/obj/env.lua
-efesoln-cl/efe.lua
-super_metroid_randomizer/
-ff6-hacking/editor-lua
-ff6-hacking/zst-hacking/decode/zst-patch.lua
-ff6-randomizer/
-ljvm/
-mesh/readfbx.lua
-vec-ffi/create_vec.lua
-hydro-cl
-modules
+	cl/obj/env.lua
+	efesoln-cl/efe.lua
+	super_metroid_randomizer/
+	ff6-hacking/editor-lua
+	ff6-hacking/zst-hacking/decode/zst-patch.lua
+	ff6-randomizer/
+	ljvm/
+	mesh/readfbx.lua
+	vec-ffi/create_vec.lua
+	hydro-cl
+	modules
 --]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
@@ -171,7 +177,13 @@ then ffi.cdef's the C code only
 args:
 	name = (optional) struct name
 	anonymous = (optional) set to 'true' for inner-anonymous structs
-		either name or anonymous must be set
+		either name or anonymous must be set.
+		NOTICE:
+			It used to be that 'anonymous' was a flags for inner structs that didnt get names.
+			Now I'm using 'anonymous' is for outer structs that don't get a name in `ffi.cdef`, but still get metatype info.
+			As a result of design (and compat with my opencl apps), 'anonymous' outer type will not match the 'anonymous' inner structs who just have the same struct code inserted.
+			I cuold use identical types in luajit using the $ type parameters, but then I'd need to grep in the inline code to produce correct C code for my OpenCL projects.
+			Maybe I'll do that later ... keep codes.c, codes.cpp, and codes.luajit, and a list of luajit type args to go with it?
 	union = (optional) set to 'true' for unions, default false for structs
 	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
@@ -293,12 +305,19 @@ end
 		)
 	end
 
-	local metatype
+	local structType
 	local metatable
 	local metacode
-	local res, err = xpcall(function()
+	assert(xpcall(function()
 		if args.cdef ~= false then
-			ffi.cdef(codes.c)
+			if not name then
+				-- cdef wants a trailing ;, non-cdef does not
+				local typeofcode = codes.c:match'^(.*);%s*$'
+				structType = ffi.typeof(typeofcode)
+			else
+				ffi.cdef(codes.c)
+				structType = ffi.typeof(name)
+			end
 		end
 
 		-- also in common with my hydro-cl project
@@ -355,7 +374,7 @@ end
 		metatable.code = codes.c
 		metatable.cppcode = codes.cpp
 
-		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the metatype.
+		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the structType.
 		metatable.subclass = nil	-- don't allow subclasses.  you can't in C after all.
 
 		-- now that we have struct as 'metatable's metatable
@@ -364,8 +383,7 @@ end
 		-- and use it to generate code (and inline some functions that would otherwise be slow)
 		metacode = template([[
 local ffi = require 'ffi'
-local metatable, args = ...
-local metatype
+local structType, metatable, args = ...
 
 <? if not args.notostring then 	-- cheap hack to disable default tostring because it gets errors in big structures
 ?>
@@ -438,12 +456,12 @@ end
 end
 
 -- TODO just use ffi.new ?  but that requires a typename still ...
--- also TODO, looks like if args.cdef == false then metatype won't be set and this won't work
+-- also TODO, looks like if args.cdef == false then structType won't be set and this won't work
 function metatable:clone()
-	return metatype(self:unpack())
+	return structType(self:unpack())
 end
 
--- do this in here so metatype can be in here too
+-- do this in here so structType can be in here too
 -- TODO performance loss due to extra closures?
 -- is it worth it from the perf gain from inlining these functions?
 
@@ -451,23 +469,20 @@ if args.metatable then
 	args.metatable(metatable)
 end
 
--- if we don't have a name then can we set a metatype?
--- in fact, even if we have a name as a typedef to an anonymous struct,
---  ffi still gives the cdata type a number instead of a name
-if metatable.name
+if args.cdef ~= false then
 -- also if we were told not to cdef then we can't get a metatype
-and args.cdef ~= false
-then
-	-- 'metatype' returned is the ffi.typeof(name)
-	metatype = ffi.metatype(metatable.name, metatable)
+	-- 'structType' returned is the ffi.typeof(name)
+	if metatable.name then
+		structType = ffi.metatype(metatable.name, metatable)
+	else
+		structType = ffi.metatype(structType, metatable)
+	end
 end
-
-return metatype
 ]], {
 	args = args,
 	metatable = metatable,
 })
-		metatype = assert(load(metacode))(metatable, args)
+		assert(load(metacode))(structType, metatable, args)
 --[[
 print('\n'
 			..(codes.c and ('c code:\n'
@@ -490,8 +505,7 @@ print('\n'
 			..showcode(metacode)..'\n') or '')
 			..tostring(err)..'\n'
 			..debug.traceback()
-	end)
-	if not res then error(err) end
+	end))
 
 	assert(struct:isa(metatable))
 
@@ -511,9 +525,9 @@ print('\n'
 	end
 	--]]
 
-	-- TODO or maybe I should return the metatable always
-	--  and rely on ffi.typeof(name) for getting its metatype?
-	return metatype or metatable
+	-- We still have to return metatable in the event structType wasn't defined, in the event that 'cdef=false' was provided
+	-- ... namely, for hydro-cl's sake.
+	return structType or metatable
 end
 
 -- instead of creating a struct instance, create a metatype subclass

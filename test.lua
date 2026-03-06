@@ -68,3 +68,18 @@ print(tolua(b:toLua()))
 -- anonymous inner works
 print(b.s[0], b.s[1], b.s[2], b.s[3])
 print(b.a, b.b, b.c, b.c)
+
+-- [[ anonymous outer class?
+local T = struct{
+	anonymous = true,
+	fields = {
+		{name='a', type='int'},
+		{name='b', type='float'},
+	},
+	metatable = function(mt)
+	end,
+}
+print(T)
+local t = T()
+print(t)
+--]]
