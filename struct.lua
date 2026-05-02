@@ -176,14 +176,22 @@ then ffi.cdef's the C code only
 
 args:
 	name = (optional) struct name
+
 	anonymous = (optional) set to 'true' for inner-anonymous structs
-		either name or anonymous must be set.
 		NOTICE:
 			It used to be that 'anonymous' was a flags for inner structs that didnt get names.
 			Now I'm using 'anonymous' is for outer structs that don't get a name in `ffi.cdef`, but still get metatype info.
 			As a result of design (and compat with my opencl apps), 'anonymous' outer type will not match the 'anonymous' inner structs who just have the same struct code inserted.
 			I cuold use identical types in luajit using the $ type parameters, but then I'd need to grep in the inline code to produce correct C code for my OpenCL projects.
 			Maybe I'll do that later ... keep codes.c, codes.cpp, and codes.luajit, and a list of luajit type args to go with it?
+
+	ctypeOnly = (optional) this is my flag for using a struct with `ffi.typeof` only.
+		Not the old `anonymous`-inner class with intention of code-inlining for the sake of reuse in C or OpenCL.
+		This for is strictly-LuaJIT-FFI ctype classes that will need lots of '$' arguments.
+		This implies `cdef=false`, and it also implies no .codes generation.
+
+	either `name` or `anonymous` or `ctypeOnly` must be set.
+
 	union = (optional) set to 'true' for unions, default false for structs
 	metatable = function(metatable) for transforming the metatable before applying it via `ffi.metatype`
 	cdef = (optional) set to 'false' to avoid calling ffi.cdef on the generated code
@@ -212,11 +220,21 @@ TODO
 local function newStruct(args)
 	local name = args.name
 	local anonymous = args.anonymous
-	assert(args.name or args.anonymous, "expected .name or .anonymous")
+	assert(args.name or args.anonymous or args.ctypeOnly, "expected .name or .anonymous or .ctypeOnly")
 	local fields = assert(args.fields)
 	assert(not struct:isa(fields))
 	local codes = {}
-	for _,cpp in ipairs{false, true} do
+
+	local typeofParams
+	local c_vs_cpp
+	if args.ctypeOnly then
+		typeofParams = table()
+		c_vs_cpp = {false}
+	else
+		c_vs_cpp = {false, true}
+	end
+
+	for _,cpp in ipairs(c_vs_cpp) do
 		codes[cpp and 'cpp' or 'c'] = template([=[
 <?
 do
@@ -250,6 +268,14 @@ for _,field in ipairs(fields) do
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
+		elseif args.ctypeOnly
+		and type(ctype) == 'cdata'
+		and tostring(ffi.typeof(ctype)):sub(1,5) == 'ctype'
+		then
+			-- we're defining a ctype-only struct,
+			-- so use ffi.typeof params for any non-string args:
+			typeofParams:insert(ctype)
+			ctype = '$'
 		elseif struct:isa(ctype) then
 			if ctype.name then
 				ctype = ctype.name
@@ -301,6 +327,7 @@ end
 				fields = fields,
 				struct = struct,
 				args = args,
+				typeofParams = typeofParams,
 			}
 		)
 	end
@@ -313,7 +340,11 @@ end
 			if not name then
 				-- cdef wants a trailing ;, non-cdef does not
 				local typeofcode = codes.c:match'^(.*);%s*$'
-				structType = ffi.typeof(typeofcode)
+				if args.ctypeOnly then
+					structType = ffi.typeof(typeofcode, typeofParams:unpack())
+				else
+					structType = ffi.typeof(typeofcode)
+				end
 			else
 				ffi.cdef(codes.c)
 				structType = ffi.typeof(name)
@@ -371,6 +402,7 @@ end
 		end
 --]=]
 
+		metatable.typeofParams = args.ctypeOnly and typeofParams or nil
 		metatable.code = codes.c
 		metatable.cppcode = codes.cpp
 

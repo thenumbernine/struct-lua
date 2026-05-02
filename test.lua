@@ -42,10 +42,10 @@ local B = struct{
 		-- and in that case, you can't get the C type string from the ffi.typeof
 		{type=struct{
 			-- if you provide a name then the name is used ...
-			-- and cdef'd in advance ... 
+			-- and cdef'd in advance ...
 			-- so it does work ...
 			-- but the resulting code looks ugly
-			-- 
+			--
 			-- if you don't use the name then ...
 			-- ... ffi can't grab a metatype ...
 			-- ... and that means we can't use it ...
@@ -82,4 +82,18 @@ local T = struct{
 print(T)
 local t = T()
 print(t)
+--]]
+
+
+-- [[ anonymous of anonymous?
+local P = struct{
+	ctypeOnly = true,	-- ctypeOnly
+	fields = {
+		{name = 'a', type='double'},
+		{name = 't', type = T},
+	},
+}
+print(P)
+local p = P()
+print(p)
 --]]
