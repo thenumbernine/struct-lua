@@ -299,32 +299,43 @@ for _,field in ipairs(fields) do
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
-?>	<?=ctype?> <?
-		elseif op.safeindex(ctype, 'ctypeOnly') then
-			typeofArgs:insert(ctype)
-?>	$ <?
+?>	/*string*/ <?=ctype?> <?
 		elseif struct:isa(ctype) then
-			if op.safeindex(ctype, 'name') then
-				ctype = ctype.name
-			else	-- anonymous struct <-> insert the code here
-				ctype = ctype.code
-			end
-?>	<?=ctype?> <?
-		else
-			local ctypestr = tostring(ctype)
-			local ctypename = ctypestr:match'^ctype<(.*)>$'
-			if ctypename then
-				ctype = ctypename
-				local base, array = ctype:match'^(.*)%[([^%]]*)%]$'
-				if array then
-					field.array = assert(tonumber(array), "unable to parse array size "..tostring(array))
-					ctype = base
-					name = name .. '[' .. array .. ']'
-				end
+			if ctype.ctypeOnly then
+				typeofArgs:insert(ctype)
+?>	/*ctype-param*/ $ <?
 			else
-				error("field type is not a string or a struct: "..tostring(ctype))
+				if ctype.name then
+?>	/*ctype w/name*/ <?=ctype.name?> <?
+				else	-- anonymous struct <-> insert the code here
+?>	/*anonymous-inline ctype*/ <?=ctype.code?> <?
+					typeofArgs:append(ctype.typeofArgs)
+				end
 			end
-?>	<?=ctype?> <?
+		else
+			-- if it's a ctype object then ...
+			-- if our struct is a ctypeOnly then we can use a $ param
+			-- but if our struct is not (i.e. is meant for later C/C++/OpenCL typedef)
+			--  then we will split out its type captured out of tostring and cross our fingers (which will still error in the case it's a ctype-object of an anonymous-struct, union, array, etc)
+			if args.ctypeOnly then
+?>	$ <?
+				typeofArgs:insert(ctype)
+			else
+				local ctypestr = tostring(ctype)
+				local ctypename = ctypestr:match'^ctype<(.*)>$'
+				if ctypename then
+					ctype = ctypename
+					local base, array = ctype:match'^(.*)%[([^%]]*)%]$'
+					if array then
+						field.array = assert(tonumber(array), "unable to parse array size "..tostring(array))
+						ctype = base
+						name = name .. '[' .. array .. ']'
+					end
+				else
+					error("field type is not a string or a struct: "..tostring(ctype))
+				end
+?>	/*ctype but not struct*/ <?=ctype?> <?
+			end
 		end
 		if args.packedFields or field.packed then
 			?>__attribute__((packed))<?
@@ -383,7 +394,7 @@ end
 		-- also in common with my hydro-cl project
 		-- consider merging
 		metatable = class(struct)
-		metatable.name = name
+		metatable.name = name or false	--- so cdata doesn't error on the __index
 		metatable.anonymous = anonymous
 		metatable.ctypeOnly = ctypeOnly
 		metatable.union = args.union
