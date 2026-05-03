@@ -69,9 +69,8 @@ print(tolua(b:toLua()))
 print(b.s[0], b.s[1], b.s[2], b.s[3])
 print(b.a, b.b, b.c, b.c)
 
--- [[ anonymous outer class?
 local T = struct{
-	anonymous = true,
+	ctypeOnly = true,
 	fields = {
 		{name='a', type='int'},
 		{name='b', type='float'},
@@ -82,10 +81,7 @@ local T = struct{
 print(T)
 local t = T()
 print(t)
---]]
 
-
--- [[ anonymous of anonymous?
 local P = struct{
 	ctypeOnly = true,	-- ctypeOnly
 	fields = {
@@ -96,4 +92,41 @@ local P = struct{
 print(P)
 local p = P()
 print(p)
---]]
+
+-- ctypeOnly of anonymous-inline of ctypeOnly
+
+local Q = struct{
+	ctypeOnly = true,
+	fields = {
+		{
+			type = struct{
+				anonymous = true,
+				fields = {
+					{name = 't', type = T},
+				},
+			},
+		},
+	},
+}
+print(Q)
+local q = Q()
+print(q)
+
+-- ctypeOnly of anonymous-inline of ctypeOnly of ctypeOnly
+
+local R = struct{
+	ctypeOnly = true,
+	fields = {
+		{
+			type = struct{
+				anonymous = true,
+				fields = {
+					{name = 'p', type = P},
+				},
+			},
+		},
+	},
+}
+print(Q)
+local q = Q()
+print(q)

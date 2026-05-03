@@ -31,6 +31,7 @@ where is this used?
 --]]
 local ffi = require 'ffi'
 local table = require 'ext.table'
+local assert = require 'ext.assert'
 local string = require 'ext.string'
 local op = require 'ext.op'
 local class = require 'ext.class'
@@ -225,16 +226,13 @@ local function newStruct(args)
 	assert(not struct:isa(fields))
 	local codes = {}
 
-	local typeofParams
-	local c_vs_cpp
-	if args.ctypeOnly then
-		typeofParams = table()
-		c_vs_cpp = {false}
-	else
-		c_vs_cpp = {false, true}
-	end
+	local ctypeOnly = not not args.ctypeOnly
+	local typeofArgs
+	local c_vs_cpp = ctypeOnly and {false} or {false, true}
 
 	for _,cpp in ipairs(c_vs_cpp) do
+		typeofArgs = table()	-- if I"m doing this twice (i.e. for non-ctypeOnly i.e. anonymous-inner types even those to-be-used for ctypeOnly types)
+		-- then just keep the latest one
 		codes[cpp and 'cpp' or 'c'] = template([=[
 <?
 do
@@ -247,14 +245,46 @@ do
 	?><?=table.concat(prefix, ' ')?>
 <?
 end
+local assert = require 'ext.assert'
+assert.len(typeofArgs, 0)
 local ffi = require 'ffi'
 local op = require 'ext.op'
 for _,field in ipairs(fields) do
 	local name = field.name
 	local ctype = field.type
+	
+	if not (name or op.safeindex(ctype, 'anonymous') or op.safeindex(ctype, 'ctypeOnly')) then
+		error("any type let alone field (without a name) type needs either .anonymous, .name, or .ctypeOnly defined")
+	end
+
+
 	if not name then
-?>	<?=ctype.code:gsub('\n', '\n\t')?>
-<?	else
+		if op.safeindex(ctype, 'ctypeOnly') then
+			error("I can't generate an anonymous-inline-typed field that has ctypeOnly")
+		else
+			if not struct:isa(ctype) then
+				assert.type(ctype, 'string', "anonymous field that is not a struct?")
+?> <?=ctype?>
+<?
+			else
+				assert(ctype.anonymous)
+				assert(ctype.metatable, "ok this is a field without a metatable, so it's not a struct")
+				local fieldCode = assert(ctype.code, "how did you have a field without a name and without .code?")
+
+				fieldCode = fieldCode:gsub('\n', '\n\t')
+				-- now if it's anonymous then we want a trailing ;
+				-- if it's not then we don't
+				if not ctype.anonymous then
+					fieldCode = fieldCode:match'^(.*);%s*$'
+				end
+				-- and TODO remind me to get rid of the trailing ; from the stored c code
+?>	<?=fieldCode?>
+<?
+				-- if we are inlining code that has typeof args then we should append those in place too
+				typeofArgs:append(ctype.typeofArgs)
+			end
+		end
+	else
 		local bits
 		if type(ctype) == 'string' then
 			local rest
@@ -269,20 +299,17 @@ for _,field in ipairs(fields) do
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
-		elseif args.ctypeOnly
-		and type(ctype) == 'cdata'
-		and tostring(ffi.typeof(ctype)):sub(1,5) == 'ctype'
-		then
-			-- we're defining a ctype-only struct,
-			-- so use ffi.typeof params for any non-string args:
-			typeofParams:insert(ctype)
-			ctype = '$'
+?>	<?=ctype?> <?
+		elseif op.safeindex(ctype, 'ctypeOnly') then
+			typeofArgs:insert(ctype)
+?>	$ <?
 		elseif struct:isa(ctype) then
 			if op.safeindex(ctype, 'name') then
 				ctype = ctype.name
 			else	-- anonymous struct <-> insert the code here
 				ctype = ctype.code
 			end
+?>	<?=ctype?> <?
 		else
 			local ctypestr = tostring(ctype)
 			local ctypename = ctypestr:match'^ctype<(.*)>$'
@@ -297,8 +324,8 @@ for _,field in ipairs(fields) do
 			else
 				error("field type is not a string or a struct: "..tostring(ctype))
 			end
-		end
 ?>	<?=ctype?> <?
+		end
 		if args.packedFields or field.packed then
 			?>__attribute__((packed))<?
 		end
@@ -328,10 +355,11 @@ end
 				fields = fields,
 				struct = struct,
 				args = args,
-				typeofParams = typeofParams,
+				typeofArgs = typeofArgs,
 			}
 		)
 	end
+	assert.index(codes, 'c', "how did you manage to skip defining codes.c?")
 
 	local structType
 	local metatable
@@ -341,11 +369,11 @@ end
 			if not name then
 				-- cdef wants a trailing ;, non-cdef does not
 				local typeofcode = codes.c:match'^(.*);%s*$'
-				if args.ctypeOnly then
-					structType = ffi.typeof(typeofcode, typeofParams:unpack())
-				else
-					structType = ffi.typeof(typeofcode)
-				end
+				--if ctypeOnly then
+					structType = ffi.typeof(typeofcode, typeofArgs:unpack())
+				--else
+				--	structType = ffi.typeof(typeofcode)
+				--end
 			else
 				ffi.cdef(codes.c)
 				structType = ffi.typeof(name)
@@ -357,7 +385,7 @@ end
 		metatable = class(struct)
 		metatable.name = name
 		metatable.anonymous = anonymous
-		metatable.ctypeOnly = not not args.ctypeOnly
+		metatable.ctypeOnly = ctypeOnly
 		metatable.union = args.union
 		metatable.fields = fields
 		-- with luajit, ffi.typeof(cdata) returns the 'ctype' object (not the ffi.metatype)
@@ -404,8 +432,8 @@ end
 		end
 --]=]
 
-		metatable.typeofParams = args.ctypeOnly and typeofParams or nil
-		metatable.code = codes.c
+		metatable.typeofArgs = typeofArgs
+		metatable.code = assert.index(codes, 'c')
 		metatable.cppcode = codes.cpp
 
 		metatable.new = newmember	-- new <-> cdata ctor.  so calling the metatable is the same as calling the cdata returned by the structType.
@@ -537,6 +565,7 @@ print('\n'
 			..showcode(codes.cpp)..'\n') or '')
 			..(metacode and ('inline metamethod code:\n'
 			..showcode(metacode)..'\n') or '')
+			..' typeofArgs='..require'ext.tolua'(typeofArgs)..'\n'
 			..tostring(err)..'\n'
 			..debug.traceback()
 	end))
