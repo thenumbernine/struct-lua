@@ -90,10 +90,10 @@ function struct.fielditerinner(state)
 
 	local ctype = field.type
 	if field.name then
-		assert(not field.anonymous)
+		assert(not (field.anonymous or field.ctypeOnly))
 		return field.name, ctype, field
 	end
-	assert(ctype.anonymous)
+	assert(ctype.anonymous or ctype.ctypeOnly)
 	if struct:isa(ctype) then
 		assert(ctype.fields)
 		for i=#ctype.fields,1,-1 do
@@ -356,6 +356,7 @@ end
 		metatable = class(struct)
 		metatable.name = name
 		metatable.anonymous = anonymous
+		metatable.ctypeOnly = not not args.ctypeOnly
 		metatable.union = args.union
 		metatable.fields = fields
 		-- with luajit, ffi.typeof(cdata) returns the 'ctype' object (not the ffi.metatype)
