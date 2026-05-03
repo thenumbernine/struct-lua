@@ -539,7 +539,7 @@ end
 -- is it worth it from the perf gain from inlining these functions?
 
 if args.metatable then
-	args.metatable(metatable)
+	args.metatable(metatable, structType)
 end
 
 if args.cdef ~= false then
