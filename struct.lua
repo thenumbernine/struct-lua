@@ -248,6 +248,7 @@ do
 <?
 end
 local ffi = require 'ffi'
+local op = require 'ext.op'
 for _,field in ipairs(fields) do
 	local name = field.name
 	local ctype = field.type
@@ -277,7 +278,7 @@ for _,field in ipairs(fields) do
 			typeofParams:insert(ctype)
 			ctype = '$'
 		elseif struct:isa(ctype) then
-			if ctype.name then
+			if op.safeindex(ctype, 'name') then
 				ctype = ctype.name
 			else	-- anonymous struct <-> insert the code here
 				ctype = ctype.code
