@@ -131,8 +131,10 @@ print(Q)
 local q = Q()
 print(q)
 
--- if you have a named type that uses a ctype ...
+--[[ if you have a named type that uses a ctype ...
+-- this is asking for trouble though, because name implies cdef, but cdef doesn't work with $ params.
 local S = struct{
+	cdef = true,
 	name = 'S',
 	fields = {
 		{name = 'p', type=P},
@@ -141,3 +143,4 @@ local S = struct{
 print(S)
 local s = S()
 print(s)
+--]]

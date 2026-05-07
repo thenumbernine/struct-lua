@@ -386,6 +386,18 @@ end
 				--	structType = ffi.typeof(typeofcode)
 				--end
 			else
+				if #typeofArgs > 0 then
+					print([[
+
+!!! WARNING !!! 
+name=]]..name..[[
+
+If you want to define a struct with a name then you probably want to cdef it so it retains with this name in the ffi state.
+However, you are also using fields containing ctypeOnly, i.e. nameless $-parameter types, which cannot be used with ffi.cdef,
+so maybe you want to use `name=nil, ctypeOnly=true`?
+As a result, something will probably go wrong in the next line...
+]])
+				end
 				ffi.cdef(codes.c)
 				structType = ffi.typeof(name)
 			end
