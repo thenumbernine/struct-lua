@@ -284,7 +284,7 @@ for _,field in ipairs(fields) do
 				typeofArgs:append(ctype.typeofArgs)
 			end
 		end
-	else
+	else	-- field has name:
 		local bits
 		if type(ctype) == 'string' then
 			local rest
@@ -299,26 +299,26 @@ for _,field in ipairs(fields) do
 				ctype = base
 				name = name .. '[' .. array .. ']'
 			end
-?>	/*string*/ <?=ctype?> <?
+?>	<?=ctype?> <?	-- string
 		elseif struct:isa(ctype) then
 			if ctype.ctypeOnly then
 				typeofArgs:insert(ctype)
-?>	/*ctype-param*/ $ <?
+?>	$ <? -- ctype-isa-struct
 			else
 				if ctype.name then
-?>	/*ctype w/name*/ <?=ctype.name?> <?
+?>	<?=ctype.name?> <? -- ctype w/name
 				else	-- anonymous struct <-> insert the code here
-?>	/*anonymous-inline ctype*/ <?=ctype.code?> <?
+?>	<?=ctype.code?> <? -- anonymous-inline ctype
 					typeofArgs:append(ctype.typeofArgs)
 				end
 			end
-		else
+		else -- ctype is not a string and not a struct ...
 			-- if it's a ctype object then ...
 			-- if our struct is a ctypeOnly then we can use a $ param
 			-- but if our struct is not (i.e. is meant for later C/C++/OpenCL typedef)
 			--  then we will split out its type captured out of tostring and cross our fingers (which will still error in the case it's a ctype-object of an anonymous-struct, union, array, etc)
 			if args.ctypeOnly then
-?>	$ <?
+?>	$ <?	-- ctype-object
 				typeofArgs:insert(ctype)
 			else
 				local ctypestr = tostring(ctype)
@@ -334,7 +334,7 @@ for _,field in ipairs(fields) do
 				else
 					error("field type is not a string or a struct: "..tostring(ctype))
 				end
-?>	/*ctype but not struct*/ <?=ctype?> <?
+?>	<?=ctype?> <?	-- ctype but not struct
 			end
 		end
 		if args.packedFields or field.packed then
@@ -380,6 +380,11 @@ end
 			if not name then
 				-- cdef wants a trailing ;, non-cdef does not
 				local typeofcode = codes.c:match'^(.*);%s*$'
+--DEBUG:print('typeofArgs:', typeofArgs:unpack())
+--DEBUG:print('BEGIN TYPEOFCODE')
+--DEBUG:print(typeofcode)
+--DEBUG:print('END TYPEOFCODE')
+
 				--if ctypeOnly then
 					structType = ffi.typeof(typeofcode, typeofArgs:unpack())
 				--else

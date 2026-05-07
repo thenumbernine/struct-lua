@@ -1,7 +1,8 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
-local struct = require 'struct'
+local assert = require 'ext.assert'
 local tolua = require 'ext.tolua'
+local struct = require 'struct'
 
 local union = struct.union
 
@@ -16,10 +17,12 @@ local A = struct{
 		{name='a', type='int'},
 	},
 }
-assert(ffi.sizeof(A) == ffi.sizeof'int')
+assert.eq(ffi.sizeof(A), ffi.sizeof'int')
 print(A.code)
+assert.is(A, struct)
 
 local a = A()
+assert.is(a, struct)--A) -- hmm, 'A' is proly a ctype, so class.isa doesn't care about its relationship in luajit ffi...
 print(a)
 print(tolua(a:toLua()))
 print()
@@ -59,10 +62,12 @@ local B = struct{
 		}},
 	},
 }
-assert(ffi.sizeof(B) == 4 * ffi.sizeof'int')
+assert.is(B, struct)
+assert.eq(ffi.sizeof(B), 4 * ffi.sizeof'int')
 
 print(B.code)
 local b = B()
+assert.is(b, struct) --B)
 print(b)
 print(tolua(b:toLua()))
 -- anonymous inner works
@@ -78,6 +83,7 @@ local T = struct{
 	metatable = function(mt)
 	end,
 }
+assert.is(T, struct)
 print(T)
 local t = T()
 print(t)
@@ -89,6 +95,7 @@ local P = struct{
 		{name = 't', type = T},
 	},
 }
+assert.is(P, struct)
 print(P)
 local p = P()
 print(p)
@@ -108,6 +115,7 @@ local Q = struct{
 		},
 	},
 }
+assert.is(Q, struct)
 print(Q)
 local q = Q()
 print(q)
@@ -127,9 +135,10 @@ local R = struct{
 		},
 	},
 }
-print(Q)
-local q = Q()
-print(q)
+assert.is(R, struct)
+print(R)
+local r = R()
+print(r)
 
 --[[ if you have a named type that uses a ctype ...
 -- this is asking for trouble though, because name implies cdef, but cdef doesn't work with $ params.
@@ -140,6 +149,7 @@ local S = struct{
 		{name = 'p', type=P},
 	},
 }
+assert.is(S, struct)
 print(S)
 local s = S()
 print(s)
