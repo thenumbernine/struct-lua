@@ -130,3 +130,14 @@ local R = struct{
 print(Q)
 local q = Q()
 print(q)
+
+-- if you have a named type that uses a ctype ...
+local S = struct{
+	name = 'S',
+	fields = {
+		{name = 'p', type=P},
+	},
+}
+print(S)
+local s = S()
+print(s)
