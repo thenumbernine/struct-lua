@@ -47,15 +47,16 @@ local struct = class()
 -- TODO TODO it's probably a bad idea to have this handle strings as if they're types ...
 -- it is ugly enough that it handles Lua table metatypes *and* ffi cdata
 function struct.isa(cl, obj)
+--DEBUG(struct):print('struct.isa(cl='..tostring(cl)..', obj='..tostring(obj)..')')
 	-- if we get a ffi.typeof() then it will be cdata as well, but luckily in ffi, typeof(typeof(x)) == typeof(x)
 	local luatype = type(obj)
---DEBUG(struct):print('got lua type', luatype)
+--DEBUG(struct):print('got obj lua type', luatype)
 	if luatype == 'string'
 	or luatype == 'cdata'
 	then
 		-- luajit is gung-ho on the exceptions, even in cases when identical Lua behavior doesn't throw them (e.g. Lua vs cdata indexing fields that don't exist)
 		local res
---DEBUG(struct):print('converting to cdata: '..tostring(obj))
+--DEBUG(struct):print('converting obj to cdata...')
 		res, obj = pcall(ffi.typeof, obj)
 --DEBUG(struct):print('... got ffi.typeof(cdata) to be', res, obj)
 		if not res then return false end
@@ -70,7 +71,19 @@ function struct.isa(cl, obj)
 		return false
 	end
 --DEBUG(struct):print('isaSet[cl]', isaSet[cl])
-	return isaSet[cl] or false
+
+	if isaSet[cl] then return true end
+
+	-- another luajit ffi quirk ... two ctype cdata's can be __eq, but still have different table key hashes ...
+	-- and another, you can't getmetatable() on ctype.  so the metatable is lost as soon as you make it.  great.
+	-- therefore, time to use the .metatable that i'm storing in the ctype __index ...
+	local mt = op.safeindex(cl, 'metatable')
+--DEBUG(struct):print('cl mt', mt)
+--DEBUG(struct):print('isaSet[mt]', isaSet[mt])
+	if isaSet[mt] then return true end
+
+--DEBUG(struct):print'...failed'
+	return false
 end
 
 -- iterate across all named fields of the struct
@@ -252,7 +265,7 @@ local op = require 'ext.op'
 for _,field in ipairs(fields) do
 	local name = field.name
 	local ctype = field.type
-	
+
 	if not (name or op.safeindex(ctype, 'anonymous') or op.safeindex(ctype, 'ctypeOnly')) then
 		error("any type let alone field (without a name) type needs either .anonymous, .name, or .ctypeOnly defined")
 	end
@@ -394,7 +407,7 @@ end
 				if #typeofArgs > 0 then
 					print([[
 
-!!! WARNING !!! 
+!!! WARNING !!!
 name=]]..name..[[
 
 If you want to define a struct with a name then you probably want to cdef it so it retains with this name in the ffi state.
@@ -411,6 +424,7 @@ As a result, something will probably go wrong in the next line...
 		-- also in common with my hydro-cl project
 		-- consider merging
 		metatable = class(struct)
+		metatable.isa = struct.isa
 		metatable.name = name or false	--- so cdata doesn't error on the __index
 		metatable.anonymous = anonymous
 		metatable.ctypeOnly = ctypeOnly
