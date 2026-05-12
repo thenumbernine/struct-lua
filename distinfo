@@ -3,6 +3,8 @@
 --------------------------------------------
 
 name = "struct"
+git = "https://github.com/thenumbernine/struct-lua"
+
 files = {
 	"README.md",
 	"distinfo",
