@@ -492,43 +492,43 @@ local structType, metatable, args = ...
 <? if not args.notostring then 	-- cheap hack to disable default tostring because it gets errors in big structures
 ?>
 function metatable:__tostring()
+	local sep = ''
 	local s = '{'
 <?
-local first = true
-for name, ctype, field in metatable:fielditer() do
-	if not field.no_tostring then
-	-- TODO ctype might not be a string...
-	-- TODO before I had so if fieldToString returned {} then I'd just skip it
-		if args.tostringFields then
-			if args.tostringOmitFalse
-			or args.tostringOmitNil
-			or args.tostringOmitEmpty
-			then
+	for name, ctype, field in metatable:fielditer() do
+		if not field.no_tostring then
+		-- TODO ctype might not be a string...
+		-- TODO before I had so if fieldToString returned {} then I'd just skip it
+			if args.tostringFields then
+				if args.tostringOmitFalse
+				or args.tostringOmitNil
+				or args.tostringOmitEmpty
+				then
 ?>
 	local v = self:fieldToString('<?=name?>', '<?=ctype?>')
 	if true
-<?				if args.tostringOmitFalse then
+<?					if args.tostringOmitFalse then
 ?>	and v ~= 'false' and v ~= false
-<?				end
-				if args.tostringOmitNil then
+<?					end
+					if args.tostringOmitNil then
 ?>	and v ~= 'nil' and v ~= nil
-<?				end
+<?					end
 				if args.tostringOmitEmpty then
 ?>	and v ~= '{}'
 <?				end
 ?>	then
-		s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..v
-<?				first = false
-?>	end
+		s = s .. sep .. '<?=name?>='..v
+		sep = ', '
+	end
 <?
 			else
-?>	s = s .. <?=first and '' or "', ' .." ?>'<?=name?>='..self:fieldToString('<?=name?>', '<?=ctype?>')
-<?				first = false
-			end
+?>	s = s .. sep .. '<?=name?>='..self:fieldToString('<?=name?>', '<?=ctype?>')
+	sep = ', '
+<?			end
 		else
-?>	s = s .. <?=first and '' or "', ' .." ?>self:fieldToString('<?=name?>', '<?=ctype?>')
-<?			first = false
-		end
+?>	s = s .. sep .. self:fieldToString('<?=name?>', '<?=ctype?>')
+	sep = ', '
+<?		end
 	end
 end
 ?>
