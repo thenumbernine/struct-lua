@@ -489,6 +489,13 @@ As a result, something will probably go wrong in the next line...
 local ffi = require 'ffi'
 local structType, metatable, args = ...
 
+<?
+local numFieldExprs = 0
+for name in metatable:fielditer() do numFieldExprs = numFieldExprs + 1 end
+local dontInlineTooComplex = numFieldExprs >= 10
+?>
+
+
 <? if not args.notostring then 	-- cheap hack to disable default tostring because it gets errors in big structures
 ?>
 function metatable:__tostring()
@@ -540,16 +547,40 @@ end
 
 metatable.__eq = function(a,b)
 	if getmetatable(a) ~= getmetatable(b) then return false end
-	return <?
-local first = true
-for name, ctype in metatable:fielditer() do
-?><?=first and '' or ' and '?>a.<?=name?> == b.<?=name?><?
-	first = false
+<?
+-- looks like 250 expressions is the limit ...
+if not dontInlineTooComplex then
+	local exprs = {}
+	for name, ctype in metatable:fielditer() do
+		table.insert(exprs, 'a.'..name..' == b.'..name)
+	end
+?>	return <?=table.concat(exprs, ' and ')?>
+<? else ?>
+	for name in metatable:fielditer() do
+		if a[name] ~= b[name] then return false end
+	end
+	return true
+<?
 end
 ?>
 end
 
 function metatable:unpack()
+<?
+if dontInlineTooComplex then
+?>
+	local fieldNames = {}
+	for name in metatable:fielditer() do
+		table.insert(fieldNames, name)
+	end
+	local function unpackFields(...)
+		if select('#', ...) == 0 then return end
+		return self[...], unpackFields(select(2, ...))
+	end
+	return unpackFields(table.unpack(fieldNames))
+<?
+else
+?>
 	return <?
 local first = true
 for name, ctype in metatable:fielditer() do
@@ -557,6 +588,7 @@ for name, ctype in metatable:fielditer() do
 	first = false
 end
 ?>
+<? end ?>
 end
 
 -- TODO just use ffi.new ?  but that requires a typename still ...
